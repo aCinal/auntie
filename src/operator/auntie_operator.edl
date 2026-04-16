@@ -1,0 +1,94 @@
+enclave {
+    from "auntie_common.edl" import *;
+
+    trusted {
+        /**
+         * @brief Establish a secure channel with a player
+         * @param context Untrusted context that describes the connection
+         * @return Player ID on success, negative error code on failure
+         */
+        public int ecall_connect_to_player([user_check] void *context);
+
+        /**
+         * @brief Initialize the operator's TEE
+         * @param context Untrusted context of the ECALL
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Operator.Initialize from the paper
+         */
+        public int ecall_initialize([user_check] void *context);
+
+        /**
+         * @brief Clear the contract
+         * @param context Untrusted context of the ECALL
+         * @param payout_address External payout address of the operator
+         * @param payout_address_length Payout address length
+         * @param collateral_transaction Player's deposit transaction
+         * @param collateral_transaction_length Length of the deposit transaction
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Operator.ClearContract from the paper
+         */
+        public int ecall_clear_contract(
+            [user_check] void *context,
+            [in, size=payout_address_length] const uint8_t *payout_address,
+            size_t payout_address_length,
+            [in, size=collateral_transaction_length] const uint8_t *collateral_transaction,
+            size_t collateral_transaction_length
+        );
+
+        /**
+         * @brief Finalize the contract
+         * @param context Untrusted context of the ECALL
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Operator.Finalize from the paper
+         */
+        public int ecall_finalize([user_check] void *context);
+
+        /**
+         * @brief Back out of the contract and refund the operator by releasing the spend authorizing key for the operator's deposit address
+         * @param context Untrusted context of the ECALL
+         * @param blocks Blocks of the Zcash blockchain on built on top of the checkpoint block
+         * @param blocks_length Length of the @ref blocks buffer
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Operator.Refund from the paper
+         */
+        public int ecall_refund([user_check] void *context, [in, size=blocks_length] const uint8_t *blocks, size_t blocks_length);
+    };
+
+    untrusted {
+        /**
+         * @brief Output the deposit address
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_address Deposit address
+         * @param deposit_address_length Deposit address length
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_initialize_callback([user_check] void *context, [in, size=deposit_address_length] const uint8_t *deposit_address, size_t deposit_address_length);
+
+        /**
+         * @brief Output the deposit transaction of a player
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_transaction Deposit transactions of a players
+         * @param deposit_transaction_length Length of the deposit transactions
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_clear_contract_callback([user_check] void *context, [in, size=deposit_transaction_length] const uint8_t *deposit_transaction, size_t deposit_transaction_length);
+
+        /**
+         * @brief Output the settlement transaction
+         * @param context Untrusted context of the root ECALL
+         * @param settlement_transaction Settlement transaction
+         * @param settlement_transaction_length Length of the settlement transaction
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_finalize_callback([user_check] void *context, [in, size=settlement_transaction_length] const uint8_t *settlement_transaction, size_t settlement_transaction_length);
+
+        /**
+         * @brief Output the deposit key as refund
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_key Deposit key
+         * @param deposit_key_length Deposit key length
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_refund_callback([user_check] void *context, [in, size=deposit_key_length] const uint8_t *deposit_key, size_t deposit_key_length);
+    };
+};

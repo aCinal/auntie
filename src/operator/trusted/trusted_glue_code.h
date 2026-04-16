@@ -1,0 +1,7 @@
+
+#ifndef __SRC_OPERATOR_TRUSTED_TRUSTED_GLUE_CODE_H
+#define __SRC_OPERATOR_TRUSTED_TRUSTED_GLUE_CODE_H
+
+#include "auntie_operator_t.h"
+
+#endif /* __SRC_OPERATOR_TRUSTED_TRUSTED_GLUE_CODE_H */

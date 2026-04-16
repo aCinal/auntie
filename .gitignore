@@ -1,0 +1,13 @@
+# Ignore EDL glue code
+*_t.c
+*_t.h
+*_u.c
+*_u.h
+# Ignore build artifacts
+auntie_operator
+auntie_player
+*.so
+*.o
+# Ignore resources such as keys but keep the directory
+resources/*
+!resources/.gitkeep

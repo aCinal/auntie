@@ -1,0 +1,7 @@
+
+#ifndef __SRC_PLAYER_TRUSTED_TRUSTED_GLUE_CODE_H
+#define __SRC_PLAYER_TRUSTED_TRUSTED_GLUE_CODE_H
+
+#include "auntie_player_t.h"
+
+#endif /* __SRC_PLAYER_TRUSTED_TRUSTED_GLUE_CODE_H */

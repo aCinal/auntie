@@ -1,0 +1,120 @@
+enclave {
+    from "auntie_common.edl" import *;
+
+    trusted {
+        /**
+         * @brief Establish a secure channel with the operator
+         * @param context Untrusted context that describes the connection
+         * @param player_id Player ID
+         * @return 0 on success, negative error code on failure
+         */
+        public int ecall_connect_to_operator([user_check] void *context, uint32_t player_id);
+
+        /**
+         * @brief Initialize the player's TEE
+         * @param context Untrusted context of the ECALL
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).Initialize from the paper
+         */
+        public int ecall_initialize([user_check] void *context);
+
+        /**
+         * @brief Input the deposit transaction and the non-monetary to the player's TEE
+         * @param deposit_transaction Player's deposit transaction
+         * @param deposit_transaction_length Length of the deposit transaction
+         * @param input Player's input to the contract
+         * @param input_length Length of the player's input
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).DepositAndInput from the paper
+         */
+        public int ecall_deposit_and_input(
+            [in, size=deposit_transaction_length] const uint8_t *deposit_transaction,
+            size_t deposit_transaction_length,
+            [in, size=input_length] const uint8_t *input,
+            size_t input_length
+        );
+
+        /**
+         * @brief Get all deposit transactions
+         * @param context Untrusted context of the ECALL
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).GetDeposits from the paper
+         */
+        public int ecall_get_deposits([user_check] void *context);
+
+        /**
+         * @brief Confirm all deposits have been made correctly
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).ConfirmDeposits from the paper
+         */
+        public int ecall_confirm_deposits(void);
+
+        /**
+         * @brief Settle the contract by demonstrating to the TEE that the settlement transaction was published and buried under sufficiently many blocks
+         * @param context Untrusted context of the ECALL
+         * @param blocks Blocks of the Zcash blockchain on built on top of the checkpoint block
+         * @param blocks_length Length of the @ref blocks buffer
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).Settle from the paper
+         * @warning This function is extremely sensitive to side-channel attacks if miner bribery (and backing out of the contract unfairly) is a concern:
+         *          membership of the settlement transaction in @ref blocks must remain a secret until sufficiently many blocks were indeed appended
+         */
+        public int ecall_settle([user_check] void *context, [in, size=blocks_length] const uint8_t *blocks, size_t blocks_length);
+
+        /**
+         * @brief Back out of the contract and refund the player by releasing the spend authorizing key for the player's payout address
+         * @param context Untrusted context of the ECALL
+         * @param blocks Blocks of the Zcash blockchain on built on top of the checkpoint block
+         * @param blocks_length Length of the @ref blocks buffer
+         * @return 0 on success, negative error code on failure
+         * @note This interface corresponds to Player(i).Refund from the paper
+         */
+        public int ecall_refund([user_check] void *context, [in, size=blocks_length] const uint8_t *blocks, size_t blocks_length);
+    };
+
+    untrusted {
+        /**
+         * @brief Output the deposit address
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_address Deposit address
+         * @param deposit_address_length Deposit address length
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_initialize_callback([user_check] void *context, [in, size=deposit_address_length] const uint8_t *deposit_address, size_t deposit_address_length);
+
+        /**
+         * @brief Output a deposit transaction
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_transaction Deposit transaction of the operator or of a player
+         * @param deposit_transaction_length Length of the deposit transaction
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_get_deposits_callback([user_check] void *context, [in, size=deposit_transaction_length] const uint8_t *deposit_transaction, size_t deposit_transaction_length);
+
+        /**
+         * @brief Output the payout address and functionality output
+         * @param context Untrusted context of the root ECALL
+         * @param payout_key Payout key
+         * @param payout_key_length Length of the payout key
+         * @param output Output of the functionality
+         * @param output_length Length of the functionality's output
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_settle_callback(
+            [user_check] void *context,
+            [in, size=payout_key_length] const uint8_t *payout_key,
+            size_t payout_key_length,
+            [in, size=output_length] const uint8_t *output,
+            size_t output_length
+        );
+
+        /**
+         * @brief Output the deposit key as refund
+         * @param context Untrusted context of the root ECALL
+         * @param deposit_key Deposit key
+         * @param deposit_key_length Deposit key length
+         * @return 0 on success, negative error code on failure
+         */
+        int ocall_refund_callback([user_check] void *context, [in, size=deposit_key_length] const uint8_t *deposit_key, size_t deposit_key_length);
+    };
+};
