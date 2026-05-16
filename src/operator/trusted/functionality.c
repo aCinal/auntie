@@ -8,10 +8,10 @@
 int evaluate_functionality(
     uint8_t *outputs[AUNTIE_NUM_PLAYERS],
     size_t output_lengths[AUNTIE_NUM_PLAYERS],
-    zatoshis_t payouts[AUNTIE_NUM_PLAYERS],
+    zat_t payouts[AUNTIE_NUM_PLAYERS],
     uint8_t *const inputs[AUNTIE_NUM_PLAYERS],
     const size_t input_lengths[AUNTIE_NUM_PLAYERS],
-    const zatoshis_t deposits[AUNTIE_NUM_PLAYERS]
+    const zat_t deposits[AUNTIE_NUM_PLAYERS]
 )
 {
 #define WINNER_MESSAGE  "YOU WIN"
@@ -19,7 +19,7 @@ int evaluate_functionality(
 
     sgx_status_t status;
     uint32_t winner;
-    zatoshis_t sum_deposit;
+    zat_t sum_deposit;
     int ret;
 
     for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++)
@@ -36,8 +36,6 @@ int evaluate_functionality(
     winner = winner % AUNTIE_NUM_PLAYERS;
 
     sum_deposit = 0;
-    for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++)
-
     /* Initialize outputs of the losers */
     for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++) {
         sum_deposit += deposits[i];

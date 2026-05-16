@@ -29,9 +29,12 @@ TRUSTED_GLUE_OBJECT := $(EDL_NAME:.edl=_t.o)
 ENC_O_FILES         := $(ENC_C_FILES:.c=.o)
 ENC_O_FILES         += $(TRUSTED_GLUE_OBJECT)
 
-.PHONY: all clean
+.PHONY: all clean rust
 
 all: $(SIGNED_SO_NAME)
+
+rust:
+	$(MAKE) -C $(RUST_DIR)
 
 # Generate the glue code with edger8r
 $(TRUSTED_GLUE_SOURCE): $(SGX_EDGER8R) $(EDL_PATH) Makefile
@@ -44,9 +47,9 @@ $(TRUSTED_GLUE_SOURCE): $(SGX_EDGER8R) $(EDL_PATH) Makefile
 	@$(CC) $(ENC_C_FLAGS) -c $< -o $@
 
 # Link everything together
-$(SO_NAME): $(ENC_O_FILES)
-	@echo "Linking the enclave from: $^"
-	@$(CC) $^ -o $@ $(ENC_LD_FLAGS)
+$(SO_NAME): $(ENC_O_FILES) rust
+	@echo "Linking the enclave from: $(ENC_O_FILES) $(RUST_LIB_PATHS)"
+	@$(CC) $(ENC_O_FILES) $(RUST_LIB_PATHS) -o $@ $(ENC_LD_FLAGS)
 
 # Sign the enclave
 $(SIGNED_SO_NAME): $(SO_NAME) $(ENC_CONFIG_FILE)
@@ -56,3 +59,4 @@ $(SIGNED_SO_NAME): $(SO_NAME) $(ENC_CONFIG_FILE)
 clean:
 	@rm -f $(SIGNED_SO_NAME) $(SO_NAME) $(ENC_O_FILES)
 	@rm -f $(EDL_NAME:.edl=_t.)*
+	$(MAKE) -C $(RUST_DIR) clean

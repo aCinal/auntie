@@ -11,10 +11,10 @@ Set the parameters `AUNTIE_NUM_PLAYERS`, `AUNTIE_OPERATOR_COLLATERAL`, `AUNTIE_R
 int evaluate_functionality(
     uint8_t *outputs[AUNTIE_NUM_PLAYERS],
     size_t output_lengths[AUNTIE_NUM_PLAYERS],
-    zatoshis_t payouts[AUNTIE_NUM_PLAYERS],
+    zat_t payouts[AUNTIE_NUM_PLAYERS],
     uint8_t *const inputs[AUNTIE_NUM_PLAYERS],
     const size_t input_lengths[AUNTIE_NUM_PLAYERS],
-    const zatoshis_t deposits[AUNTIE_NUM_PLAYERS]
+    const zat_t deposits[AUNTIE_NUM_PLAYERS]
 )
 {
     /* Transform the deposit amounts (d_i in the paper) and inputs (x_i in the paper)
@@ -22,7 +22,7 @@ int evaluate_functionality(
      * as needed. */
 
     uint32_t lottery_winner;
-    zatoshis_t sum_deposit;
+    zat_t sum_deposit;
 
     /* Choose the lottery winner */
     sgx_read_rand(&lottery_winner, sizeof(lottery_winner));
@@ -71,3 +71,11 @@ The `check_quotes.py` script fetches the measurements of the relevant types of T
 If all checks pass, the operator should call `initialize` to create a Zcash wallet and obtain the deposit address. Having made the deposit, they should input the deposit transaction together with a payout address to the TEE by calling `clear_contract`, which will give the operator the deposit transactions of the players. Once these are confirmed on the Zcash blockchain, the operator should call `finalize` to receive the settlement transaction that redeems their deposit. If any of the counterparties abort the contract, the operator should call `refund` to get their deposit back. See [the paper](https://eprint.iacr.org/2025/1965) for details.
 
 The flow for the players is similar. Each player should first call `initialize` to create the Zcash wallets and obtain the deposit address. Having made the deposit, they should input the deposit transaction together with the input to the functionality to the TEE by calling `deposit_and_input`. The player should then fetch the counterparties' deposits via `get_deposits` and confirm they have all been broadcast to the Zcash blockchain by calling `confirm_deposits`. Once the settlement transaction has been broadcast and buried under sufficiently many blocks, the player should settle the contract by calling `settle`. If any of the counterparties abort the contract, the player should call `refund` to get their deposit back.
+
+## Differences from the Paper
+
+In Intel SGX, remote attestation is [no longer anonymous](https://community.intel.com/t5/Intel-Software-Guard-Extensions/IAS-End-of-Life-Announcement/td-p/1545831). To guarantee contract unlinkability, parties should [reprovision their CPUs with new provisioning certificate](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/02/infrastructure_setup) (and hence also new quoting enclave identity).
+
+A single (compressed) Halo2 zk-SNARK is provided for all [*action statements*](https://zips.z.cash/protocol/nu6.pdf#actionstatement) in a transaction (`struct Bundle`). Because of this, we have the operator's TEE produce the proof already in `zcash_create_transaction` as part of clearing the contract and we have the players' TEEs really only sign with the [*randomized spend authorizing key*](https://zips.z.cash/protocol/nu6.pdf#spendauthsig). To facilitate the operator's TEE's creation of the proof, we have the players' TEEs disclose [*full viewing keys*](https://zips.z.cash/protocol/nu6.pdf#orchardkeycomponents) as well as [*spend authorization randomizers*](https://zips.z.cash/protocol/nu6.pdf#spendauthsig). Note that this does not reveal to the operator's TEE (and therefore, potentially, to the operator themselves through side channels) anything it did not already know.
+
+Finally, the proof involves demonstrating the knowledge of Merkle paths leading from the input notes' (deposits') commitments to the anchor. These paths as well as the anchor can be provided by the operator who has seen the deposit transactions anyway. If the operator provides malformed paths at this point, the settlement transaction will itself be malformed and hence not be accepted by the network. This is equivalent to the operator's withholding the settlement transaction. See [the paper](https://eprint.iacr.org/2025/1965) for a detailed discussion on this.

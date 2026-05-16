@@ -31,7 +31,7 @@ export PLAYER_ENCLAVE_SO           := auntie_player_tee.signed.so
 export PLAYER_ENCLAVE_NAME         := auntie_player_tee
 
 # n in the paper
-export AUNTIE_NUM_PLAYERS          := 2
+export AUNTIE_NUM_PLAYERS          := 3
 # delta in the paper
 export AUNTIE_OPERATOR_COLLATERAL  := 27500000
 # tau in the paper

@@ -11,7 +11,8 @@ static struct zcash_wallet *deposit_wallet;
 static struct zcash_wallet *payout_wallet;
 static uint8_t *functionality_output;
 static size_t functionality_output_length;
-static struct zcash_transaction *unauthorized_settlement;
+static struct zcash_advice *deposit_advice;
+static uint8_t settlement_sighash[32];
 
 int ecall_initialize_impl(void *context)
 {
@@ -27,7 +28,7 @@ int ecall_initialize_impl(void *context)
     payout_wallet = zcash_create_wallet();
     if (!payout_wallet) {
         printf("%s: failed to create payout wallet\n", __func__);
-        zcash_destroy_wallet(deposit_wallet);
+        zcash_release_wallet(deposit_wallet);
         deposit_wallet = NULL;
         return -ENOMEM;
     }
@@ -35,8 +36,8 @@ int ecall_initialize_impl(void *context)
     ret = zcash_export_address(&deposit_address, &deposit_address_length, deposit_wallet->address);
     if (ret) {
         printf("%s: failed to export deposit address with error %d\n", __func__, ret);
-        zcash_destroy_wallet(deposit_wallet);
-        zcash_destroy_wallet(payout_wallet);
+        zcash_release_wallet(deposit_wallet);
+        zcash_release_wallet(payout_wallet);
         deposit_wallet = NULL;
         payout_wallet = NULL;
         return ret;
@@ -47,8 +48,8 @@ int ecall_initialize_impl(void *context)
     free(deposit_address);
     if (ret) {
         printf("%s: ocall_initialize_callback failed with error %d\n", __func__, ret);
-        zcash_destroy_wallet(deposit_wallet);
-        zcash_destroy_wallet(payout_wallet);
+        zcash_release_wallet(deposit_wallet);
+        zcash_release_wallet(payout_wallet);
         deposit_wallet = NULL;
         payout_wallet = NULL;
     }
@@ -61,12 +62,14 @@ int ecall_initialize_impl(void *context)
 int ecall_deposit_and_input_impl(const uint8_t *deposit_transaction, size_t deposit_transaction_length, const uint8_t *input, size_t input_length)
 {
     struct zcash_transaction *tx;
-    zatoshis_t deposit_amount;
+    zat_t deposit_amount;
     struct auntie_msg *msg;
     struct auntie_msg_deposit_and_input *payload;
     uint32_t payload_size;
     uint8_t *payout_address;
     size_t payout_address_length;
+    uint8_t *raw_advice;
+    size_t raw_advice_length;
     int ret;
 
     /* Import the transaction thus also verifying it is well-formatted */
@@ -86,18 +89,38 @@ int ecall_deposit_and_input_impl(const uint8_t *deposit_transaction, size_t depo
         return ret;
     }
 
-    printf("%s: sending the deposit transaction, the functionality's input, and the payout address to the operator's TEE\n", __func__);
+    deposit_advice = zcash_create_advice(deposit_wallet->key);
+    if (!deposit_advice) {
+        printf("%s: failed to get own advice\n", __func__);
+        free(payout_address);
+        return -EFAULT;
+    }
+
+    ret = zcash_export_advice(&raw_advice, &raw_advice_length, deposit_advice);
+    if (ret) {
+        printf("%s: failed to export own advice with error %d\n", __func__, ret);
+        free(payout_address);
+        zcash_release_advice(deposit_advice);
+        deposit_advice = NULL;
+        return ret;
+    }
+
+    printf("%s: sending the deposit transaction, the functionality's input, the payout address and the advice to the operator's TEE\n", __func__);
 
     /* Send a message to the operator's TEE */
     payload_size = \
         sizeof(struct auntie_msg_deposit_and_input) + \
         deposit_transaction_length + \
         input_length + \
-        payout_address_length;
+        payout_address_length + \
+        raw_advice_length;
     msg = auntie_msg_create(AUNTIE_MSG_DEPOSIT_AND_INPUT, payload_size);
     if (!msg) {
         printf("%s: failed to create deposit-and-input message of size %u\n", __func__, payload_size);
         free(payout_address);
+        free(raw_advice);
+        zcash_release_advice(deposit_advice);
+        deposit_advice = NULL;
         return -ENOMEM;
     }
     payload = auntie_msg_get_payload(msg);
@@ -105,14 +128,19 @@ int ecall_deposit_and_input_impl(const uint8_t *deposit_transaction, size_t depo
     payload->deposit_transaction_offset = 0;
     payload->input_offset = payload->deposit_transaction_offset + deposit_transaction_length;
     payload->payout_address_offset = payload->input_offset + input_length;
+    payload->advice_offset = payload->payout_address_offset + payout_address_length;
     (void) memcpy(payload->data + payload->deposit_transaction_offset, deposit_transaction, deposit_transaction_length);
     (void) memcpy(payload->data + payload->input_offset, input, input_length);
     (void) memcpy(payload->data + payload->payout_address_offset, payout_address, payout_address_length);
+    (void) memcpy(payload->data + payload->advice_offset, raw_advice, raw_advice_length);
     ret = auntie_msg_send(msg, operator->channel);
     auntie_msg_destroy(msg);
     free(payout_address);
+    free(raw_advice);
     if (ret) {
         printf("%s: failed to send deposit-and-input message to operator's TEE with error %d\n", __func__, ret);
+        zcash_release_advice(deposit_advice);
+        deposit_advice = NULL;
         return ret;
     }
 
@@ -129,9 +157,9 @@ int ecall_get_deposits_impl(void *context)
     struct auntie_msg_clear_contract *payload;
     int ret;
 
-    printf("%s: receiving the unauthorized settlement transaction, the functionality's output, and the counterparties' deposit transactions from the operator\n", __func__);
+    printf("%s: receiving the unauthorized settlement transaction's hash, the functionality's output, and the counterparties' deposit transactions from the operator\n", __func__);
 
-    /* Receive the unauthorized settlement transaction, the functionality's
+    /* Receive the unauthorized settlement transaction's hash, the functionality's
      * output, and the deposit transactions from the operator's TEE */
     msg = auntie_msg_receive(operator->channel);
     if (!msg) {
@@ -146,6 +174,9 @@ int ecall_get_deposits_impl(void *context)
     }
     payload = auntie_msg_get_payload(msg);
 
+    /* Save the settlement transaction's hash */
+    (void) memcpy(settlement_sighash, payload->settlement_sighash, sizeof(settlement_sighash));
+
     /* Save the output of the functionality */
     functionality_output_length = payload->deposit_transactions_offsets[0] - payload->output_offset;
     functionality_output = malloc(functionality_output_length);
@@ -157,19 +188,6 @@ int ecall_get_deposits_impl(void *context)
         return -ENOMEM;
     }
     (void) memcpy(functionality_output, payload->data + payload->output_offset, functionality_output_length);
-
-    /* Save the settlement transaction */
-    unauthorized_settlement = zcash_import_transaction(
-        payload->data + payload->settlement_transaction_offset,
-        payload->output_offset - payload->settlement_transaction_offset
-    );
-    if (!unauthorized_settlement) {
-        printf("%s: failed to import unauthorized settlement transaction\n", __func__);
-        auntie_msg_destroy(msg);
-        free(functionality_output);
-        functionality_output = NULL;
-        return -EINVAL;
-    }
 
     printf("%s: outputting the deposit transactions for inspection\n", __func__);
 
@@ -184,8 +202,6 @@ int ecall_get_deposits_impl(void *context)
             printf("%s: ocall_get_deposits_callback failed with error %d\n", __func__, ret);
             /* There is nothing better to do than abort */
             auntie_msg_destroy(msg);
-            zcash_release_transaction(unauthorized_settlement);
-            unauthorized_settlement = NULL;
             free(functionality_output);
             functionality_output = NULL;
             return ret;
@@ -200,8 +216,6 @@ int ecall_get_deposits_impl(void *context)
     if (ret) {
         printf("%s: ocall_get_deposits_callback failed with error %d\n", __func__, ret);
         /* There is nothing better to do than abort */
-        zcash_release_transaction(unauthorized_settlement);
-        unauthorized_settlement = NULL;
         free(functionality_output);
         functionality_output = NULL;
     }
@@ -221,7 +235,10 @@ int ecall_confirm_deposits_impl(void)
     printf("%s: signing the settlement transaction thus confirming all deposits have been made\n", __func__);
 
     /* Sign the settlement transaction and send the signature to the operator */
-    signature = zcash_sign_transaction(deposit_wallet->key, unauthorized_settlement);
+    signature = zcash_sign_transaction(deposit_wallet->key, deposit_advice, settlement_sighash);
+    /* We can now release the advice */
+    zcash_release_advice(deposit_advice);
+    deposit_advice = NULL;
     if (!signature) {
         printf("%s: failed to sign settlement transaction\n", __func__);
         return -EFAULT;
@@ -278,7 +295,7 @@ int ecall_settle_impl(void *context, const uint8_t *blocks, size_t blocks_length
         return -EINVAL;
     }
 
-    ret = zcash_authorized_and_buried(unauthorized_settlement, deposit_wallet->key, chain);
+    ret = zcash_authorized_and_buried(settlement_sighash, deposit_wallet->key, chain);
     zcash_release_blocks(chain);
     if (ret < 0) {
         printf("%s: failed to verify chain with error %d\n", __func__, ret);

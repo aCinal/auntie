@@ -150,5 +150,6 @@ int ocall_print_quote(const uint8_t *quote, size_t quote_length, sgx_report_data
         fprintf(stderr, "%s: failed to write out newline", __func__);
         return -EIO;
     }
+
     return 0;
 }

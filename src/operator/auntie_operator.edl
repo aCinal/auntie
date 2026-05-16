@@ -24,6 +24,8 @@ enclave {
          * @param payout_address_length Payout address length
          * @param collateral_transaction Player's deposit transaction
          * @param collateral_transaction_length Length of the deposit transaction
+         * @param merkle_paths Authentication path for the collateral transactions
+         * @param merkle_paths_length Length of the Merkle paths
          * @return 0 on success, negative error code on failure
          * @note This interface corresponds to Operator.ClearContract from the paper
          */
@@ -32,7 +34,9 @@ enclave {
             [in, size=payout_address_length] const uint8_t *payout_address,
             size_t payout_address_length,
             [in, size=collateral_transaction_length] const uint8_t *collateral_transaction,
-            size_t collateral_transaction_length
+            size_t collateral_transaction_length,
+            [in, size=merkle_paths_length] const uint8_t *merkle_paths,
+            size_t merkle_paths_length
         );
 
         /**

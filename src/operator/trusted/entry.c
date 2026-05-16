@@ -76,11 +76,27 @@ int ecall_initialize(void *context)
     return ret;
 }
 
-int ecall_clear_contract(void *context, const uint8_t *payout_address, size_t payout_address_length, const uint8_t *collateral_transaction, size_t collateral_transaction_length)
+int ecall_clear_contract(
+    void *context,
+    const uint8_t *payout_address,
+    size_t payout_address_length,
+    const uint8_t *collateral_transaction,
+    size_t collateral_transaction_length,
+    const uint8_t *merkle_paths,
+    size_t merkle_paths_length
+)
 {
     int ret;
     CHECK_STATE(INITIALIZED);
-    ret = ecall_clear_contract_impl(context, payout_address, payout_address_length, collateral_transaction, collateral_transaction_length);
+    ret = ecall_clear_contract_impl(
+        context,
+        payout_address,
+        payout_address_length,
+        collateral_transaction,
+        collateral_transaction_length,
+        merkle_paths,
+        merkle_paths_length
+    );
     /* Errors at this point abort the contract */
     if (ret)
         state = ABORTED;

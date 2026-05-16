@@ -31,10 +31,11 @@ int get_session_key(sgx_key_128bit_t *session_key, const sgx_ec256_public_t *ga,
 
     (void) memset(cmac_zero_key, 0, sizeof(cmac_zero_key));
     status = sgx_rijndael128_cmac_msg(
-            &cmac_zero_key,
-            (const uint8_t *) gab,
-            sizeof(*gab),
-            (sgx_cmac_128bit_tag_t *) &cmac_derivation_key);
+        &cmac_zero_key,
+        (const uint8_t *) gab,
+        sizeof(*gab),
+        (sgx_cmac_128bit_tag_t *) &cmac_derivation_key
+    );
     if (status != SGX_SUCCESS) {
         printf("%s: sgx_rijndael128_cmac_msg failed with error 0x%x\n", __func__, status);
         return -EFAULT;

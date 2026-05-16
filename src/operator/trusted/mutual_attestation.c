@@ -153,6 +153,7 @@ struct player *mutual_attestation(void *context, sgx_target_info_t *quoting_encl
     if (ret) {
         printf("%s: failed to derive operator's report data with error %d\n", __func__, ret);
         channel_teardown(channel);
+        auntie_msg_destroy(msg1);
         return NULL;
     }
     /* Derive the report data that the player is suppoed to use for their report */

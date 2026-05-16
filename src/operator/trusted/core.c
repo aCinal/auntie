@@ -9,7 +9,8 @@
 #include <string.h>
 
 static struct zcash_wallet *deposit_wallet;
-static struct zcash_transaction *unauthorized_settlement;
+static struct zcash_partial_transaction *unauthorized_settlement;
+static struct zcash_authorization *operator_signature;
 
 int ecall_initialize_impl(void *context)
 {
@@ -26,7 +27,7 @@ int ecall_initialize_impl(void *context)
     ret = zcash_export_address(&deposit_address, &deposit_address_length, deposit_wallet->address);
     if (ret) {
         printf("%s: failed to export deposit address with error %d\n", __func__, ret);
-        zcash_destroy_wallet(deposit_wallet);
+        zcash_release_wallet(deposit_wallet);
         deposit_wallet = NULL;
         return ret;
     }
@@ -36,7 +37,7 @@ int ecall_initialize_impl(void *context)
     free(deposit_address);
     if (ret) {
         printf("%s: ocall_initialize_callback failed with error %d\n", __func__, ret);
-        zcash_destroy_wallet(deposit_wallet);
+        zcash_release_wallet(deposit_wallet);
         deposit_wallet = NULL;
         return ret;
     }
@@ -46,7 +47,15 @@ int ecall_initialize_impl(void *context)
     return ret;
 }
 
-int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size_t payout_address_length, const uint8_t *collateral_transaction, size_t collateral_transaction_length)
+int ecall_clear_contract_impl(
+    void *context,
+    const uint8_t *payout_address,
+    size_t payout_address_length,
+    const uint8_t *collateral_transaction,
+    size_t collateral_transaction_length,
+    const uint8_t *merkle_paths,
+    size_t merkle_paths_length
+)
 {
     struct auntie_msg *msg;
     struct auntie_msg_deposit_and_input *deposit_payload;
@@ -55,39 +64,43 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
     uint8_t *outputs[AUNTIE_NUM_PLAYERS] = {};
     size_t input_lengths[AUNTIE_NUM_PLAYERS];
     size_t output_lengths[AUNTIE_NUM_PLAYERS];
-    zatoshis_t collateral_amount;
-    zatoshis_t deposit_amounts[AUNTIE_NUM_PLAYERS];
-    zatoshis_t payouts[AUNTIE_NUM_PLAYERS + 1];
+    zat_t collateral_amount;
+    zat_t deposit_amounts[AUNTIE_NUM_PLAYERS];
+    zat_t payouts[AUNTIE_NUM_PLAYERS + 1];
     struct zcash_transaction *deposit_transactions[AUNTIE_NUM_PLAYERS + 1] = {};
     struct zcash_address *payout_addresses[AUNTIE_NUM_PLAYERS + 1] = {};
+    struct zcash_advice *advices[AUNTIE_NUM_PLAYERS + 1] = {};
     uint8_t *raw_deposit_transactions[AUNTIE_NUM_PLAYERS] = {};
     size_t raw_deposit_transactions_lengths[AUNTIE_NUM_PLAYERS];
     size_t total_deposit_transactions_length;
-    uint8_t *raw_settlement_transaction = NULL;
-    size_t raw_settlement_transaction_length;
     uint32_t length;
     uint32_t offset;
+    uint8_t settlement_sighash[32];
     int ret;
 
-    /* Use index AUNTIE_NUM_PLAYERS for the operator to have the code be a bit cleaner
-     * than if we were to follow the paper and use 0 for the operator */
-
-    payout_addresses[AUNTIE_NUM_PLAYERS] = zcash_import_address(payout_address, payout_address_length);
-    if (!payout_addresses[AUNTIE_NUM_PLAYERS]) {
+    payout_addresses[0] = zcash_import_address(payout_address, payout_address_length);
+    if (!payout_addresses[0]) {
         printf("%s: failed to import external payout address\n", __func__);
         ret = -EINVAL;
         goto cleanup;
     }
 
-    deposit_transactions[AUNTIE_NUM_PLAYERS] = zcash_import_transaction(collateral_transaction, collateral_transaction_length);
-    if (!deposit_transactions[AUNTIE_NUM_PLAYERS]) {
+    advices[0] = zcash_create_advice(deposit_wallet->key);
+    if (!advices[0]) {
+        printf("%s: failed to get our own advice\n", __func__);
+        ret = -EFAULT;
+        goto cleanup;
+    }
+
+    deposit_transactions[0] = zcash_import_transaction(collateral_transaction, collateral_transaction_length);
+    if (!deposit_transactions[0]) {
         printf("%s: failed to import collateral transaction\n", __func__);
         ret = -EINVAL;
         goto cleanup;
     }
     total_deposit_transactions_length = collateral_transaction_length;
 
-    collateral_amount = zcash_deposited_amount(deposit_transactions[AUNTIE_NUM_PLAYERS], deposit_wallet->key);
+    collateral_amount = zcash_deposited_amount(deposit_transactions[0], deposit_wallet->key);
     if (AUNTIE_OPERATOR_COLLATERAL != collateral_amount) {
         printf("%s: collateral transaction deposits %lu zatoshi(s), expected %lu\n", \
             __func__, collateral_amount, AUNTIE_OPERATOR_COLLATERAL);
@@ -118,8 +131,8 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
         deposit_payload = auntie_msg_get_payload(msg);
 
         length = deposit_payload->input_offset - deposit_payload->deposit_transaction_offset;
-        deposit_transactions[i] = zcash_import_transaction(deposit_payload->data + deposit_payload->deposit_transaction_offset, length);
-        if (!deposit_transactions[i]) {
+        deposit_transactions[i + 1] = zcash_import_transaction(deposit_payload->data + deposit_payload->deposit_transaction_offset, length);
+        if (!deposit_transactions[i + 1]) {
             printf("%s: failed to import deposit transaction of player %d\n", __func__, i+1);
             auntie_msg_destroy(msg);
             ret = -EINVAL;
@@ -148,10 +161,19 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
         input_lengths[i] = length;
         (void) memcpy(inputs[i], deposit_payload->data + deposit_payload->payout_address_offset, length);
 
-        length = auntie_msg_get_payload_size(msg) - sizeof(*deposit_payload) - deposit_payload->payout_address_offset;
-        payout_addresses[i] = zcash_import_address(deposit_payload->data + deposit_payload->payout_address_offset, length);
-        if (!payout_addresses[i]) {
+        length = deposit_payload->advice_offset - deposit_payload->payout_address_offset;
+        payout_addresses[i + 1] = zcash_import_address(deposit_payload->data + deposit_payload->payout_address_offset, length);
+        if (!payout_addresses[i + 1]) {
             printf("%s: failed to import payout address of player %d\n", __func__, i + 1);
+            auntie_msg_destroy(msg);
+            ret = -EINVAL;
+            goto cleanup;
+        }
+
+        length = auntie_msg_get_payload_size(msg) - sizeof(*deposit_payload) - deposit_payload->advice_offset;
+        advices[i + 1] = zcash_import_advice(deposit_payload->data + deposit_payload->advice_offset, length);
+        if (!advices[i + 1]) {
+            printf("%s: failed to import advice of player %d\n", __func__, i + 1);
             auntie_msg_destroy(msg);
             ret = -EINVAL;
             goto cleanup;
@@ -162,38 +184,41 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
 
     printf("%s: evaluating the functionality\n", __func__);
 
-    ret = evaluate_functionality(outputs, output_lengths, payouts, inputs, input_lengths, deposit_amounts);
+    /* Offset payouts by 1 as the operator only redeems their collateral */
+    ret = evaluate_functionality(
+        outputs,
+        output_lengths,
+        payouts + 1,
+        inputs,
+        input_lengths,
+        deposit_amounts
+    );
     if (ret) {
         printf("%s: failed to evaluate functionality with error %d\n", __func__, ret);
         goto cleanup;
     }
     /* Pay the operator back their collateral */
-    payouts[AUNTIE_NUM_PLAYERS] = collateral_amount;
+    payouts[0] = collateral_amount;
 
     printf("%s: issuing the settlement transaction\n", __func__);
 
     /* Issue the settlement transaction */
-    unauthorized_settlement = zcash_create_transaction(deposit_transactions, payouts, payout_addresses);
+    unauthorized_settlement = zcash_create_transaction(deposit_transactions, payouts, payout_addresses, advices, merkle_paths, merkle_paths_length);
     if (!unauthorized_settlement) {
         printf("%s: failed to create settlement transaction\n", __func__);
-        ret = -ENOMEM;
+        ret = -EFAULT;
         goto cleanup;
     }
+    // TODO: Use the correct hash here, see https://zips.z.cash/zip-0244
+    zcash_hash_transaction(settlement_sighash, unauthorized_settlement);
 
-    ret = zcash_export_transaction(&raw_settlement_transaction, &raw_settlement_transaction_length, unauthorized_settlement);
-    if (ret) {
-        printf("%s: failed to export settlement transaction with error %d\n", __func__, ret);
-        goto cleanup;
-    }
-
-    printf("%s: sending the functionality's output and the unauthorized settlement transaction to each player\n", __func__);
+    printf("%s: sending the functionality's output and the unauthorized settlement transaction's hash to each player\n", __func__);
 
     /* Send a clear-contract message to every player */
     for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++) {
 
         length = \
             sizeof(struct auntie_msg_clear_contract) + \
-            raw_settlement_transaction_length +
             output_lengths[i] + \
             total_deposit_transactions_length;
 
@@ -206,10 +231,8 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
         }
 
         clear_payload = auntie_msg_get_payload(msg);
+        (void) memcpy(clear_payload->settlement_sighash, settlement_sighash, sizeof(clear_payload->settlement_sighash));
         offset = 0;
-        clear_payload->settlement_transaction_offset = offset;
-        (void) memcpy(clear_payload->data + offset, raw_settlement_transaction, raw_settlement_transaction_length);
-        offset += raw_settlement_transaction_length;
         clear_payload->output_offset = offset;
         (void) memcpy(clear_payload->data + offset, outputs[i], output_lengths[i]);
         offset += output_lengths[i];
@@ -248,6 +271,14 @@ int ecall_clear_contract_impl(void *context, const uint8_t *payout_address, size
         }
     }
 
+    /* Sign the settlement before releasing our advice */
+    operator_signature = zcash_sign_transaction(deposit_wallet->key, advices[0], settlement_sighash);
+    if (!operator_signature) {
+        printf("%s: failed to produce the operator's signature\n", __func__);
+        ret = -EFAULT;
+        goto cleanup;
+    }
+
     printf("%s: contract cleared successfully\n", __func__);
 
 cleanup:
@@ -256,6 +287,8 @@ cleanup:
             zcash_release_transaction(deposit_transactions[i]);
         if (payout_addresses[i])
             zcash_release_address(payout_addresses[i]);
+        if (advices[i])
+            zcash_release_advice(advices[i]);
     }
 
     for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++) {
@@ -267,12 +300,9 @@ cleanup:
             free(outputs[i]);
     }
 
-    if (raw_settlement_transaction)
-        free(raw_settlement_transaction);
-
     /* On error, release the settlement transaction */
     if (ret && unauthorized_settlement) {
-        zcash_release_transaction(unauthorized_settlement);
+        zcash_release_partial_transaction(unauthorized_settlement);
         unauthorized_settlement = NULL;
     }
 
@@ -313,9 +343,9 @@ int ecall_finalize_impl(void *context)
         }
 
         payload = auntie_msg_get_payload(msg);
-        signatures[i] = zcash_import_signature(payload->signature, payload->signature_length);
+        signatures[i + 1] = zcash_import_signature(payload->signature, payload->signature_length);
         auntie_msg_destroy(msg);
-        if (!signatures[i]) {
+        if (!signatures[i + 1]) {
             printf("%s: failed to import signature of player %d\n", __func__, channel_id(players[i]->channel));
             ret = -EINVAL;
             goto cleanup;
@@ -323,16 +353,13 @@ int ecall_finalize_impl(void *context)
     }
 
     /* Add the operator's signature */
-    signatures[AUNTIE_NUM_PLAYERS] = zcash_sign_transaction(deposit_wallet->key, unauthorized_settlement);
-    if (!signatures[AUNTIE_NUM_PLAYERS]) {
-        printf("%s: failed to produce the operator's signature\n", __func__);
-        ret = -EFAULT;
-        goto cleanup;
-    }
+    signatures[0] = operator_signature;
 
     printf("%s: all deposits confirmed by everyone, authorizing the settlement transaction\n", __func__);
 
     authorized_settlement = zcash_authorize_transaction(unauthorized_settlement, signatures);
+    /* zcash_authorize_transaction consumes unauthorized_settlement */
+    unauthorized_settlement = NULL;
     if (!authorized_settlement) {
         printf("%s: failed to authorize settlement\n", __func__);
         ret = -EINVAL;

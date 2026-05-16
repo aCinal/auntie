@@ -54,3 +54,8 @@ export ENC_COMMON_LD_FLAGS := \
 	-Wl,--export-dynamic \
 	-Wl,--defsym,__ImageBase=0 \
 	-Wl,-z,relro,-z,now,-z,noexecstack
+
+export RUST_PACKAGES = zcash_ffi
+export RUST_DIR = $(ENC_COMMON_DIR)/rust
+export RUST_LIB_NAMES = $(addsuffix .a,$(addprefix lib,$(RUST_PACKAGES)))
+export RUST_LIB_PATHS = $(addprefix $(RUST_DIR)/,$(RUST_LIB_NAMES))

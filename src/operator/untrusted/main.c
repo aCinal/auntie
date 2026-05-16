@@ -20,9 +20,6 @@ static inline void usage(const char *exename)
     exit(EXIT_FAILURE);
 }
 
-// TODO: make sure channel_ingress and other wrappers do not restart any syscalls
-// TODO: enable shutting down the program (via shell! Ctrl+C returns us to the shell)
-
 static void sigint_handler(int signo)
 {
     (void) signo;
@@ -158,13 +155,15 @@ static void handle_clear_contract(int argc, char **argv)
 {
     uint8_t *payout_address;
     uint8_t *collateral_transaction;
+    uint8_t *merkle_paths;
     size_t payout_address_length;
     size_t collateral_transaction_length;
+    size_t merkle_paths_length;
     FILE *deposit_transactions_file;
     int ret;
 
-    if (argc < 4) {
-        printf("%s: payout address, collateral transaction, or deposit transactions file missing\n", __func__);
+    if (argc < 5) {
+        printf("%s: payout address, collateral transaction, deposit transactions, or the Merkle paths file missing\n", __func__);
         return;
     }
 
@@ -178,11 +177,19 @@ static void handle_clear_contract(int argc, char **argv)
         return;
     }
 
-    deposit_transactions_file = fopen(argv[3], "w");
-    if (!deposit_transactions_file) {
-        perror(argv[3]);
+    merkle_paths = read_entire_file(&merkle_paths_length, argv[3]);
+    if (!merkle_paths) {
         free(payout_address);
         free(collateral_transaction);
+        return;
+    }
+
+    deposit_transactions_file = fopen(argv[4], "w");
+    if (!deposit_transactions_file) {
+        perror(argv[4]);
+        free(payout_address);
+        free(collateral_transaction);
+        free(merkle_paths);
         return;
     }
 
@@ -191,7 +198,9 @@ static void handle_clear_contract(int argc, char **argv)
         payout_address,
         payout_address_length,
         collateral_transaction,
-        collateral_transaction_length
+        collateral_transaction_length,
+        merkle_paths,
+        merkle_paths_length
     );
     if (ret)
         printf("%s: ecall_clear_contract failed with error %d\n", __func__, ret);
@@ -199,6 +208,7 @@ static void handle_clear_contract(int argc, char **argv)
     (void) fclose(deposit_transactions_file);
     free(payout_address);
     free(collateral_transaction);
+    free(merkle_paths);
 }
 
 static void handle_finalize(int argc, char **argv)
@@ -300,7 +310,7 @@ int main(int argc, char **argv)
     );
     register_shell_command(
         "clear_contract",
-        UNDERLINE("payout-address") " " UNDERLINE("collateral-tx") " " UNDERLINE("deposits-file") " / Clear the contract by evaluating the functionality and creating the settlement transaction",
+        UNDERLINE("payout-address") " " UNDERLINE("collateral-tx") " " UNDERLINE("merkle-paths") " " UNDERLINE("deposits-file") " / Clear the contract by evaluating the functionality and creating the settlement transaction",
         handle_clear_contract
     );
     register_shell_command(

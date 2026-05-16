@@ -6,7 +6,6 @@
 #include <sgx_tcrypto.h>
 
 struct channel;
-extern struct channel *channels;
 
 struct channel *channel_create(void *connection);
 void channel_encrypt(struct channel *channel, const sgx_key_128bit_t *session_key);

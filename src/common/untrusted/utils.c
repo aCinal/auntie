@@ -14,7 +14,7 @@ uint8_t *read_entire_file(size_t *size, const char *filename)
         return NULL;
     }
 
-    if (fseek(file, -1, SEEK_END)) {
+    if (fseek(file, 0, SEEK_END)) {
         perror("fseek");
         (void) fclose(file);
         return NULL;

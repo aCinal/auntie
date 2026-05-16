@@ -182,6 +182,7 @@ struct operator *mutual_attestation(void *context, sgx_target_info_t *quoting_en
     if (ret) {
         printf("%s: failed to derive player's report data with error %d\n", __func__, ret);
         channel_teardown(channel);
+        auntie_msg_destroy(msg2);
         return NULL;
     }
     /* Derive the report data that the operator was suppoed to use for their report */
