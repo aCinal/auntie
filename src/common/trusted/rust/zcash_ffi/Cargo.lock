@@ -1053,6 +1053,7 @@ dependencies = [
 name = "zcash_ffi"
 version = "0.1.0"
 dependencies = [
+ "blake2b_simd",
  "incrementalmerkletree",
  "orchard",
  "pasta_curves",

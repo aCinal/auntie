@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+blake2b_simd = { version = "1", default-features = false }
 incrementalmerkletree = { version = "0.8.2", default-features = false }
 orchard = { git = "https://github.com/aCinal/orchard", branch = "add_spends_with_alphas", default-features = false, features = ["circuit"] }
 pasta_curves = { version = "0.5.1", default-features = false }

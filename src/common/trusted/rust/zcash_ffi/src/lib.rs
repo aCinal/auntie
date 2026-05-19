@@ -1,48 +1,17 @@
 #![no_std]
 extern crate alloc;
 
-use rand_core::RngCore;
-use sgx::rand::SgxRng;
+// TODO: define checkpoint_block here
+
+mod sighash;
+
 use alloc::{
     boxed::Box,
     slice,
     vec::Vec,
 };
 use core::ptr;
-
-unsafe extern "C" {
-    fn printf(ptr: *const i8, ...);
-}
-
-#[macro_export]
-macro_rules! format {
-    ($($arg:tt)*) => {{
-        use alloc::string::String;
-        use core::fmt::Write;
-
-        let mut s = String::new();
-        write!(&mut s, $($arg)*).unwrap();
-        s
-    }};
-}
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {{
-        use core::ffi::c_char;
-
-        let s = format!($($arg)*);
-
-        // Ensure null-terminated string
-        let mut bytes = s.into_bytes();
-        bytes.push(0);
-
-        unsafe {
-            printf(b"%s\0".as_ptr() as *const c_char, bytes.as_ptr());
-        }
-    }};
-}
-
+use crate::sighash::signature_hash;
 use orchard::{
     Address,
     builder::{Builder, BundleType, InProgress, PartiallyAuthorized},
@@ -56,10 +25,14 @@ use orchard::{
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
 };
-
 use pasta_curves::{
     group::ff::{Field, PrimeField},
     pallas,
+};
+use rand_core::RngCore;
+use sgx::{
+    println,
+    rand::SgxRng,
 };
 use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::transaction::components::orchard::{
@@ -68,11 +41,13 @@ use zcash_primitives::transaction::components::orchard::{
 };
 use zcash_protocol::value::ZatBalance;
 
+
 #[derive(Debug)]
 pub struct Advice {
     fvk: FullViewingKey,
     alpha: pallas::Scalar,
 }
+
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_create_key() -> *mut SpendingKey {
@@ -247,7 +222,7 @@ pub extern "C" fn zcash_create_transaction(
             match notes.len() {
                 1 => Some(notes[0]),
                 n => {
-                    print!("zcash_create_transaction: bundle has {n} notes addressed to the deposit address\n");
+                    println!("zcash_create_transaction: bundle has {n} notes addressed to the deposit address");
                     None
                 }
             }
@@ -258,7 +233,7 @@ pub extern "C" fn zcash_create_transaction(
     if !inputs.is_some() {
         return ptr::null_mut();
     }
-    print!("zcash_create_transaction: found all input notes. Parsing Merkle paths...\n");
+    println!("zcash_create_transaction: found all input notes. Parsing Merkle paths...");
     let inputs = inputs.unwrap();
 
     // Assume the Merkle paths file has the format [anchor][pos0 as u32][path0][pos1 as u32][path1]...[posN as u32][pathN]
@@ -266,7 +241,7 @@ pub extern "C" fn zcash_create_transaction(
     const RAW_ANCHOR_SIZE: usize = 32;
     let expected_size = RAW_ANCHOR_SIZE + RAW_PATH_SIZE * (num_players + 1);
     if merkle_paths_length != expected_size {
-        print!("zcash_create_transaction: Merkle paths size {} invalid, expected {}\n", merkle_paths_length, expected_size);
+        println!("zcash_create_transaction: Merkle paths size {} invalid, expected {}", merkle_paths_length, expected_size);
         return ptr::null_mut();
     }
     let merkle_paths = unsafe { slice::from_raw_parts(merkle_paths, merkle_paths_length) };
@@ -289,7 +264,7 @@ pub extern "C" fn zcash_create_transaction(
 
     let mut builder = Builder::new(BundleType::DEFAULT, anchor.into());
 
-    print!("zcash_create_transaction: adding spends...\n");
+    println!("zcash_create_transaction: adding spends...");
 
     // Add spends
     inputs
@@ -303,11 +278,11 @@ pub extern "C" fn zcash_create_transaction(
                 merkle_path,
                 Some(advice.alpha),
             ) {
-                print!("builder.add_spend returned error {}\n", err);
+                println!("builder.add_spend returned error {}", err);
             }
         });
 
-    print!("zcash_create_transaction: adding outputs...\n");
+    println!("zcash_create_transaction: adding outputs...");
 
     // Add outputs
     payouts
@@ -323,27 +298,28 @@ pub extern "C" fn zcash_create_transaction(
             ).unwrap()
         });
 
-    print!("zcash_create_transaction: building the bundle...\n");
+    println!("zcash_create_transaction: building the bundle...");
 
     // Build the bundle
     let unauthorized = match builder.build(SgxRng) {
         Ok(Some((bundle, _))) => bundle,
         _ => {
-            print!("zcash_create_transaction: failed to build the bundle\n");
+            println!("zcash_create_transaction: failed to build the bundle");
             return ptr::null_mut();
         },
     };
 
-    print!("zcash_create_transaction: proving the bundle...\n");
+    println!("zcash_create_transaction: proving the bundle...");
 
     let pk = ProvingKey::build();
     let mut rng = SgxRng;
-    // TODO: Use correct SIGHASH (of the whole transaction?)
-    let sighash = unauthorized.commitment();
+    // Compute the signature hash of a transaction that has only this Orchard bundle
+    // TODO: Account for miner's fees
+    let sighash = signature_hash(&unauthorized);
     let partially_authorized = match unauthorized.create_proof(&pk, &mut rng) {
         Ok(bundle) => bundle.prepare(rng, sighash.into()),
         _ => {
-            print!("zcash_create_transaction: failed to create the proof\n");
+            println!("zcash_create_transaction: failed to create the proof");
             return ptr::null_mut();
         },
     };
@@ -369,7 +345,7 @@ pub extern "C" fn zcash_deposited_amount(transaction: *const Transaction, key: *
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_hash_transaction(sighash: *mut [u8; 32], transaction: *const PartialTransaction) {
-    unsafe { *sighash = transaction.as_ref().unwrap().commitment().into(); }
+    unsafe { *sighash = signature_hash(transaction.as_ref().unwrap()); }
 }
 
 type Signature = redpallas::Signature<redpallas::SpendAuth>;
@@ -412,7 +388,7 @@ pub extern "C" fn zcash_authorize_transaction(unauthorized_transaction: *mut Par
     match bundle.append_signatures(&signatures).and_then(PartialTransaction::finalize) {
         Ok(authorized) => Box::into_raw(Box::new(authorized)),
         Err(e) => {
-            print!("zcash_authorize_transaction: bundle.append_signatures() returned error {e}\n");
+            println!("zcash_authorize_transaction: bundle.append_signatures() returned error {e}");
             ptr::null_mut()
         },
     }
@@ -447,9 +423,9 @@ pub extern "C" fn zcash_authorized_and_buried(sighash: *const [u8; 32], _deposit
     // that we obtained from the operator's TEE and signed. If it is in any way invalid, it could not have been accepted to the blockchain
     // which means the operator is misbehaving and we are their accomplices! We may be able to obtain the functionality's output but in so
     // doing we forfeit the deposit, and the operator is also not redeeming their collateral.
-    print!("zcash_authorized_and_buried stub called: checking only that the settlement transaction is valid as delay of settlement is not yet implemented\n");
+    println!("zcash_authorized_and_buried stub called: checking only that the settlement transaction is valid as delay of settlement is not yet implemented");
 
-    let actual: [u8; 32] = unsafe { blocks.as_ref() }.unwrap().commitment().into();
+    let actual = signature_hash(unsafe { blocks.as_ref() }.unwrap());
     if unsafe { *sighash } == actual {
         env!("AUNTIE_SETTLE_DELAY_BLOCKS").parse().unwrap()
     } else {
@@ -459,6 +435,6 @@ pub extern "C" fn zcash_authorized_and_buried(sighash: *const [u8; 32], _deposit
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_blocks_since_checkpoint(_blocks: *const Blocks) -> i32 {
-    print!("zcash_blocks_since_checkpoint returning 0, as contract timeout is not yet implemented\n");
+    println!("zcash_blocks_since_checkpoint returning 0, as contract timeout is not yet implemented");
     0
 }

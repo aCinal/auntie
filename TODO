@@ -1,4 +1,3 @@
-Use full transactions not just Orchard bundles (in particular, use correct SIGHASH)
 Implement contract timeout and delay of settlement
 Document format of input files
 Make example functionality constant-time and fixed-memory access pattern
