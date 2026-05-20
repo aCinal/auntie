@@ -53,7 +53,7 @@ int evaluate_functionality(
     return 0;
 }
 ```
-Finally, modify `checkpoint_block` in `src/common/trusted/rust/zcash_ffi/src/lib.rs`.
+Finally, modify `checkpoint_block` in `src/common/trusted/rust/zcash_ffi/src/blocks.rs`.
 
 Build and sign the TEEs:
 ```bash

@@ -1,4 +1,3 @@
-
 use orchard::bundle::{Authorization, Bundle};
 
 const HEADER: u32 = 0x8000_0005;               // Version 5 with the fOverwintered flag (bit 31) set
