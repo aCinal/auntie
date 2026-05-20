@@ -6,7 +6,23 @@ Intel SGX-based proof-of-concept implementation of the **Auntie** contract execu
 
 Install Intel SGX components, including [the software development kit (SDK) together with the platform software (PSW)](https://github.com/intel/confidential-computing.sgx), the [remote attestation libraries (DCAP)](https://github.com/intel/confidential-computing.tee.dcap), and the [Provisioning Certificate Caching Service (PCCS)](https://github.com/intel/confidential-computing.tee.dcap.pccs).
 
-Set the parameters `AUNTIE_NUM_PLAYERS`, `AUNTIE_OPERATOR_COLLATERAL`, `AUNTIE_REFUND_DELAY_BLOCKS`, and `AUNTIE_SETTLE_DELAY_BLOCKS` in the top-level `Makefile`. See [the paper](https://eprint.iacr.org/2025/1965) for reference. Modify the functionality as needed in `src/operator/trusted/functionality.c`:
+Set the parameters in the top-level `Makefile` (see [the paper](https://eprint.iacr.org/2025/1965) for reference):
+```Makefile
+# n in the paper
+export AUNTIE_NUM_PLAYERS             := 3
+# delta in the paper
+export AUNTIE_OPERATOR_COLLATERAL     := 27500000
+# tau in the paper
+export AUNTIE_REFUND_DELAY_BLOCKS     := 60
+# tau' in the paper
+export AUNTIE_SETTLE_DELAY_BLOCKS     := 120
+
+# Fees
+export AUNTIE_MINER_FEE_PER_PLAYER    := 5000
+export AUNTIE_OPERATOR_FEE_PER_PLAYER := 5000
+```
+
+Modify the functionality as needed in `src/operator/trusted/functionality.c`:
 ```c
 int evaluate_functionality(
     uint8_t *outputs[AUNTIE_NUM_PLAYERS],

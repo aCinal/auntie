@@ -1,5 +1,4 @@
 Implement contract timeout and delay of settlement
 Document format of input files
 Make example functionality constant-time and fixed-memory access pattern
-Account for miners' fees
 Add rayon support for parallelism in SGX

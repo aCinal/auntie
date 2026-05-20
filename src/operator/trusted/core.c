@@ -133,14 +133,14 @@ int ecall_clear_contract_impl(
         length = deposit_payload->input_offset - deposit_payload->deposit_transaction_offset;
         deposit_transactions[i + 1] = zcash_import_transaction(deposit_payload->data + deposit_payload->deposit_transaction_offset, length);
         if (!deposit_transactions[i + 1]) {
-            printf("%s: failed to import deposit transaction of player %d\n", __func__, i+1);
+            printf("%s: failed to import deposit transaction of player %d\n", __func__, i + 1);
             auntie_msg_destroy(msg);
             ret = -EINVAL;
             goto cleanup;
         }
         raw_deposit_transactions[i] = malloc(length);
         if (!raw_deposit_transactions[i]) {
-            printf("%s: failed to allocate buffer for raw deposit transaction of player %d\n", __func__, i+1);
+            printf("%s: failed to allocate buffer for raw deposit transaction of player %d\n", __func__, i + 1);
             auntie_msg_destroy(msg);
             ret = -ENOMEM;
             goto cleanup;
@@ -150,10 +150,21 @@ int ecall_clear_contract_impl(
         total_deposit_transactions_length += length;
         deposit_amounts[i] = deposit_payload->deposit_amount;
 
+        /* Verify the amount deposited covers the fees at least */
+        if (deposit_amounts[i] < AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
+            printf("%s: player %d deposited too little to cover all fees (expected at least %lu zatoshi(s))\n", \
+                __func__, i + 1, AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER);
+            ret = -EINVAL;
+            goto cleanup;
+        }
+        /* Subtract both fees */
+        deposit_amounts[i] -= AUNTIE_MINER_FEE_PER_PLAYER;
+        deposit_amounts[i] -= AUNTIE_OPERATOR_FEE_PER_PLAYER;
+
         length = deposit_payload->payout_address_offset - deposit_payload->input_offset;
         inputs[i] = malloc(length);
         if (!inputs[i]) {
-            printf("%s: failed to allocate buffer for player %d's input\n", __func__, i+1);
+            printf("%s: failed to allocate buffer for player %d's input\n", __func__, i + 1);
             auntie_msg_destroy(msg);
             ret = -ENOMEM;
             goto cleanup;
@@ -197,8 +208,8 @@ int ecall_clear_contract_impl(
         printf("%s: failed to evaluate functionality with error %d\n", __func__, ret);
         goto cleanup;
     }
-    /* Pay the operator back their collateral */
-    payouts[0] = collateral_amount;
+    /* Pay the operator back their collateral plus a fee */
+    payouts[0] = collateral_amount + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
 
     printf("%s: issuing the settlement transaction\n", __func__);
 
@@ -209,7 +220,6 @@ int ecall_clear_contract_impl(
         ret = -EFAULT;
         goto cleanup;
     }
-    // TODO: Use the correct hash here, see https://zips.z.cash/zip-0244
     zcash_hash_transaction(settlement_sighash, unauthorized_settlement);
 
     printf("%s: sending the functionality's output and the unauthorized settlement transaction's hash to each player\n", __func__);

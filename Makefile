@@ -1,45 +1,49 @@
 
-export SGX_DEBUG                   ?= 0
+export SGX_DEBUG                      ?= 0
 
 # Set to the install prefix of linux-sdk (https://github.com/intel/linux-sgx)
-export SGX_SDK                     ?= /opt/intel/sgxsdk
-export SGX_DCAP                    ?= /opt/intel/sgx-dcap
+export SGX_SDK                        ?= /opt/intel/sgxsdk
+export SGX_DCAP                       ?= /opt/intel/sgx-dcap
 
 # Paths where libraries (custom enclave-friendly libc, etc.) can be found, as well as tools for signing or generating glue code
-export SGX_LIBRARY_PATH            := $(SGX_SDK)/lib64
-export SGX_ENCLAVE_SIGNER          := $(SGX_SDK)/bin/x64/sgx_sign
-export SGX_EDGER8R                 := $(SGX_SDK)/bin/x64/sgx_edger8r
+export SGX_LIBRARY_PATH               := $(SGX_SDK)/lib64
+export SGX_ENCLAVE_SIGNER             := $(SGX_SDK)/bin/x64/sgx_sign
+export SGX_EDGER8R                    := $(SGX_SDK)/bin/x64/sgx_edger8r
 
 # We build the untrusted app and the trusted enclave separately. Specify flags common to both.
-export SGX_COMMON_FLAGS            := -m64
+export SGX_COMMON_FLAGS               := -m64
 
 ifeq ($(SGX_DEBUG), 1)
-	SGX_COMMON_FLAGS               += -O0 -g -Werror -Wall
+	SGX_COMMON_FLAGS                  += -O0 -g -Werror -Wall
 else
-	SGX_COMMON_FLAGS               += -O2 -Werror -Wall
+	SGX_COMMON_FLAGS                  += -O2 -Werror -Wall
 endif
 
-export ROOT_DIR                    := $(shell pwd)
-export COMMON_PREFIX               := $(ROOT_DIR)/src/common
+export ROOT_DIR                       := $(shell pwd)
+export COMMON_PREFIX                  := $(ROOT_DIR)/src/common
 
-export OPERATOR_APP_EXE            := auntie_operator
-export OPERATOR_ENCLAVE_SO         := auntie_operator_tee.signed.so
-export OPERATOR_ENCLAVE_NAME       := auntie_operator_tee
+export OPERATOR_APP_EXE               := auntie_operator
+export OPERATOR_ENCLAVE_SO            := auntie_operator_tee.signed.so
+export OPERATOR_ENCLAVE_NAME          := auntie_operator_tee
 
-export PLAYER_APP_EXE              := auntie_player
-export PLAYER_ENCLAVE_SO           := auntie_player_tee.signed.so
-export PLAYER_ENCLAVE_NAME         := auntie_player_tee
+export PLAYER_APP_EXE                 := auntie_player
+export PLAYER_ENCLAVE_SO              := auntie_player_tee.signed.so
+export PLAYER_ENCLAVE_NAME            := auntie_player_tee
 
 # n in the paper
-export AUNTIE_NUM_PLAYERS          := 3
+export AUNTIE_NUM_PLAYERS             := 3
 # delta in the paper
-export AUNTIE_OPERATOR_COLLATERAL  := 27500000
+export AUNTIE_OPERATOR_COLLATERAL     := 27500000
 # tau in the paper
-export AUNTIE_REFUND_DELAY_BLOCKS  := 60
+export AUNTIE_REFUND_DELAY_BLOCKS     := 60
 # tau' in the paper
-export AUNTIE_SETTLE_DELAY_BLOCKS  := 120
+export AUNTIE_SETTLE_DELAY_BLOCKS     := 120
 
-export SIGNING_KEY                 := $(ROOT_DIR)/resources/mrsigner.priv
+# Use marginal fee of 5000 zatoshis per action as recommended in https://zips.z.cash/zip-0317
+export AUNTIE_MINER_FEE_PER_PLAYER    := 5000
+export AUNTIE_OPERATOR_FEE_PER_PLAYER := 5000
+
+export SIGNING_KEY                    := $(ROOT_DIR)/resources/mrsigner.priv
 
 export EDGER8R_COMMON_SEARCH_PATHS := \
 	--search-path $(SGX_SDK)/include \
