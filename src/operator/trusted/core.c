@@ -76,6 +76,7 @@ int ecall_clear_contract_impl(
     uint32_t length;
     uint32_t offset;
     uint8_t settlement_sighash[32];
+    uint8_t settlement_txid[32];
     int ret;
 
     payout_addresses[0] = zcash_import_address(payout_address, payout_address_length);
@@ -194,8 +195,8 @@ int ecall_clear_contract_impl(
     }
 
     printf("%s: evaluating the functionality\n", __func__);
-
-    /* Offset payouts by 1 as the operator only redeems their collateral */
+    /* Offset payouts by 1 as the operator is not part of the functionality and
+     * only redeems their collateral and collects fees */
     ret = evaluate_functionality(
         outputs,
         output_lengths,
@@ -220,7 +221,7 @@ int ecall_clear_contract_impl(
         ret = -EFAULT;
         goto cleanup;
     }
-    zcash_hash_transaction(settlement_sighash, unauthorized_settlement);
+    zcash_hash_transaction(settlement_sighash, settlement_txid, unauthorized_settlement);
 
     printf("%s: sending the functionality's output and the unauthorized settlement transaction's hash to each player\n", __func__);
 
@@ -242,6 +243,7 @@ int ecall_clear_contract_impl(
 
         clear_payload = auntie_msg_get_payload(msg);
         (void) memcpy(clear_payload->settlement_sighash, settlement_sighash, sizeof(clear_payload->settlement_sighash));
+        (void) memcpy(clear_payload->settlement_txid, settlement_txid, sizeof(clear_payload->settlement_txid));
         offset = 0;
         clear_payload->output_offset = offset;
         (void) memcpy(clear_payload->data + offset, outputs[i], output_lengths[i]);
@@ -403,22 +405,14 @@ cleanup:
 int ecall_refund_impl(void *context, const uint8_t *blocks, size_t blocks_length)
 {
     /* We have to be super careful here - if the OCALL that prints the key returns error, we cannot trust it,
-     * and must still transition to state REFUNDED; otherwise,  a player would be able to get _both_ a refund
+     * and must still transition to state REFUNDED; otherwise, a player would be able to get _both_ a refund
      * and the functionality's output! */
 
-    struct zcash_blocks *chain;
     uint8_t *deposit_key;
     size_t deposit_key_length;
     int ret;
 
-    chain = zcash_import_blocks(blocks, blocks_length);
-    if (!chain) {
-        printf("%s: failed to import blocks\n", __func__);
-        return -EINVAL;
-    }
-
-    ret = zcash_blocks_since_checkpoint(chain);
-    zcash_release_blocks(chain);
+    ret = zcash_blocks_since_checkpoint(blocks, blocks_length);
     if (ret < 0) {
         printf("%s: failed to verify chain with error %d\n", __func__, ret);
         return ret;

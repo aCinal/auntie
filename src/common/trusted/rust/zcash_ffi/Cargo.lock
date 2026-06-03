@@ -397,7 +397,7 @@ dependencies = [
  "rand",
  "sinsemilla",
  "subtle",
- "uint",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -983,6 +983,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "uint"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "909988d098b2f738727b161a106cfc7cab00c539c2687a8836f8e565976fb53e"
+dependencies = [
+ "byteorder",
+ "crunchy",
+ "hex",
+ "static_assertions",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1054,11 +1066,15 @@ name = "zcash_ffi"
 version = "0.1.0"
 dependencies = [
  "blake2b_simd",
+ "corez",
+ "equihash",
  "incrementalmerkletree",
  "orchard",
  "pasta_curves",
  "rand_core",
  "sgx",
+ "sha2 0.10.9",
+ "uint 0.10.0",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_protocol",

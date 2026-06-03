@@ -149,7 +149,7 @@ void run_shell(void)
         if (!fgets(buffer, sizeof(buffer), stdin)) {
             if (feof(stdin))
                 exit(EXIT_SUCCESS);
-            /* Ignore interruptions here, have the player tell us explicitly they want to quit */
+            /* Ignore interruptions here, have the user tell us explicitly they want to quit */
             if (errno == EINTR)
                 continue;
             perror("fgets");

@@ -5,11 +5,15 @@ edition = "2024"
 
 [dependencies]
 blake2b_simd = { version = "1", default-features = false }
+corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
+equihash = { version = "0.3", default-features = false }
 incrementalmerkletree = { version = "0.8.2", default-features = false }
 orchard = { git = "https://github.com/aCinal/orchard", branch = "add_spends_with_alphas", default-features = false, features = ["circuit"] }
 pasta_curves = { version = "0.5.1", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 sgx = { version = "0.1.0", path = "../sgx" }
+sha2 = { version = "0.10.0", default-features = false, features = ["force-soft"] }
+uint = { version = "0.10.0", default-features = false }
 zcash_note_encryption = { version = "0.4.1", default-features = false }
 zcash_primitives = { version = "0.27.0", default-features = false }
 zcash_protocol = { version = "0.8.0", default-features = false }

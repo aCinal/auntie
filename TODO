@@ -1,4 +1,3 @@
-Implement contract timeout and delay of settlement
-Document format of input files
+Document format of input files (and add tools for formatting them)
 Make example functionality constant-time and fixed-memory access pattern
 Add rayon support for parallelism in SGX

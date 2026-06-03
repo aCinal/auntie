@@ -2,6 +2,6 @@
 extern crate alloc;
 
 mod blocks;
-mod sighash;
+mod digests;
 mod transactions;
 mod wallet;

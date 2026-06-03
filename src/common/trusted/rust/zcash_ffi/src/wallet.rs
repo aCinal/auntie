@@ -27,7 +27,7 @@ pub extern "C" fn zcash_create_key() -> *mut SpendingKey {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_key(key: *mut SpendingKey) {
-    drop(unsafe{ Box::from_raw(key) });
+    drop(unsafe { Box::from_raw(key) });
 }
 
 #[unsafe(no_mangle)]
@@ -63,5 +63,5 @@ pub extern "C" fn zcash_export_address_impl(raw_address: *mut [u8; 43], addr: *c
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_address(addr: *mut Address) {
-    drop(unsafe{ Box::from_raw(addr) });
+    drop(unsafe { Box::from_raw(addr) });
 }

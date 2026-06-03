@@ -13,6 +13,7 @@ static uint8_t *functionality_output;
 static size_t functionality_output_length;
 static struct zcash_advice *deposit_advice;
 static uint8_t settlement_sighash[32];
+static uint8_t settlement_txid[32];
 
 int ecall_initialize_impl(void *context)
 {
@@ -78,7 +79,7 @@ int ecall_deposit_and_input_impl(const uint8_t *deposit_transaction, size_t depo
         printf("%s: failed to import deposit transaction\n", __func__);
         return -EINVAL;
     }
-    /* Get the amount deposited to the our deposit address */
+    /* Get the amount deposited to our deposit address */
     deposit_amount = zcash_deposited_amount(tx, deposit_wallet->key);
     /* We no longer need the transaction past this point */
     zcash_release_transaction(tx);
@@ -181,8 +182,9 @@ int ecall_get_deposits_impl(void *context)
     }
     payload = auntie_msg_get_payload(msg);
 
-    /* Save the settlement transaction's hash */
+    /* Save the settlement transaction's hashes */
     (void) memcpy(settlement_sighash, payload->settlement_sighash, sizeof(settlement_sighash));
+    (void) memcpy(settlement_txid, payload->settlement_txid, sizeof(settlement_txid));
 
     /* Save the output of the functionality */
     functionality_output_length = payload->deposit_transactions_offsets[0] - payload->output_offset;
@@ -291,19 +293,11 @@ int ecall_settle_impl(void *context, const uint8_t *blocks, size_t blocks_length
      * takes a longer chain of blocks to call this function than to call Refund, but we nevertheless take
      * the extra precaution.) */
 
-    struct zcash_blocks *chain;
     uint8_t *payout_key;
     size_t payout_key_length;
     int ret;
 
-    chain = zcash_import_blocks(blocks, blocks_length);
-    if (!chain) {
-        printf("%s: failed to import blocks\n", __func__);
-        return -EINVAL;
-    }
-
-    ret = zcash_authorized_and_buried(settlement_sighash, deposit_wallet->key, chain);
-    zcash_release_blocks(chain);
+    ret = zcash_authorized_and_buried(settlement_txid, deposit_wallet->key, blocks, blocks_length);
     if (ret < 0) {
         printf("%s: failed to verify chain with error %d\n", __func__, ret);
         return ret;
@@ -338,19 +332,11 @@ int ecall_refund_impl(void *context, const uint8_t *blocks, size_t blocks_length
      * and should still transition to state REFUNDED; otherwise, a player would be able to get _both_ a refund
      * and the functionality's output some time later! */
 
-    struct zcash_blocks *chain;
     uint8_t *deposit_key;
     size_t deposit_key_length;
     int ret;
 
-    chain = zcash_import_blocks(blocks, blocks_length);
-    if (!chain) {
-        printf("%s: failed to import blocks\n", __func__);
-        return -EINVAL;
-    }
-
-    ret = zcash_blocks_since_checkpoint(chain);
-    zcash_release_blocks(chain);
+    ret = zcash_blocks_since_checkpoint(blocks, blocks_length);
     if (ret < 0) {
         printf("%s: failed to verify chain with error %d\n", __func__, ret);
         return ret;

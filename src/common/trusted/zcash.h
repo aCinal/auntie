@@ -13,11 +13,10 @@ struct zcash_wallet {
     struct zcash_key *key;
     struct zcash_address *address;
 };
+struct zcash_advice;
 struct zcash_partial_transaction;
 struct zcash_transaction;
 struct zcash_authorization;
-struct zcash_blocks;
-struct zcash_advice;
 
 /** Create a wallet */
 struct zcash_wallet *zcash_create_wallet(void);
@@ -63,8 +62,8 @@ struct zcash_partial_transaction *zcash_create_transaction(
 /** Get amount deposited by a transaction to a specified address */
 zat_t zcash_deposited_amount(const struct zcash_transaction *transaction, const struct zcash_key *key);
 
-/** Get a SIGHASH hash of a Zcash transaction */
-void zcash_hash_transaction(uint8_t sighash[32], const struct zcash_partial_transaction *transaction);
+/** Get a SIGHASH hash and TXID of a Zcash transaction */
+void zcash_hash_transaction(uint8_t sighash[32], uint8_t txid[32], const struct zcash_partial_transaction *transaction);
 /** Produce a single authorization for a Zcash transaction */
 struct zcash_authorization *zcash_sign_transaction(const struct zcash_key *deposit_key, const struct zcash_advice *advice, const uint8_t sighash[32]);
 /** Decode and import a transaction authorization */
@@ -76,13 +75,9 @@ struct zcash_transaction *zcash_authorize_transaction(struct zcash_partial_trans
 /** Free struct zcash_authorization */
 void zcash_release_signature(struct zcash_authorization *signature);
 
-/** Decode and import a chain of blocks */
-struct zcash_blocks *zcash_import_blocks(const uint8_t *blocks, size_t blocks_length);
-/** Free a chain of blocks */
-void zcash_release_blocks(struct zcash_blocks *blocks);
 /** Verify a given transaction is buried sufficiently deep in a valid chain of blocks and has been authorized with the given key and return the burial depth */
-int zcash_authorized_and_buried(const uint8_t sighash[32], const struct zcash_key *deposit_key, const struct zcash_blocks *blocks);
+int zcash_authorized_and_buried(const uint8_t txid[32], const struct zcash_key *deposit_key, const uint8_t *blocks, size_t blocks_length);
 /** Verify a given chain of blocks and return its length on top of the checkpoint block */
-int zcash_blocks_since_checkpoint(const struct zcash_blocks *blocks);
+int zcash_blocks_since_checkpoint(const uint8_t *blocks, size_t blocks_length);
 
 #endif /* __SRC_COMMON_TRUSTED_ZCASH_H */

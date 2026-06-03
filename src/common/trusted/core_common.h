@@ -16,6 +16,7 @@ struct auntie_msg_deposit_and_input {
 
 struct auntie_msg_clear_contract {
     uint8_t settlement_sighash[32];
+    uint8_t settlement_txid[32];
     uint32_t output_offset;
     uint32_t deposit_transactions_offsets[AUNTIE_NUM_PLAYERS + 1];
     uint8_t data[0];

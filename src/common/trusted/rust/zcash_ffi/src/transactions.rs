@@ -4,7 +4,7 @@ use alloc::{
     vec::Vec,
 };
 use core::ptr;
-use crate::sighash::signature_hash;
+use crate::digests::{signature_digest, txid_digest};
 use orchard::{
     Address,
     Anchor,
@@ -54,15 +54,22 @@ pub extern "C" fn zcash_create_advice(key: *const SpendingKey) -> *mut Advice {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_import_advice(raw_advice: *const u8, raw_advice_length: usize) -> *mut Advice {
-    let advice = match TryInto::<&[u8; 96+32]>::try_into(unsafe { slice::from_raw_parts(raw_advice, raw_advice_length) }) {
-        Ok(slice) => Advice {
-            fvk: FullViewingKey::from_bytes(slice[..96].try_into().unwrap()).unwrap(),
-            alpha: pallas::Scalar::from_repr(slice[96..].try_into().unwrap()).unwrap(),
-        },
+    let slice = match TryInto::<&[u8; 96+32]>::try_into(unsafe { slice::from_raw_parts(raw_advice, raw_advice_length) }) {
+        Ok(slice) => slice,
         Err(_) => return ptr::null_mut(),
     };
 
-    Box::into_raw(Box::new(advice))
+    // We do not really expect to have problems with decoding since advices are created within TEEs, but let us be consistent and vet all imports
+    let fvk = FullViewingKey::from_bytes(slice[..96].try_into().unwrap());
+    let alpha = pallas::Scalar::from_repr(slice[96..].try_into().unwrap());
+    if fvk.is_some().into() && alpha.is_some().into() {
+        let fvk = fvk.unwrap();
+        let alpha = alpha.unwrap();
+        let advice = Advice { fvk, alpha };
+        Box::into_raw(Box::new(advice))
+    } else {
+        ptr::null_mut()
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -76,12 +83,11 @@ pub extern "C" fn zcash_export_advice_impl(raw_advice: *mut [u8; 96+32], advice:
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_advice(advice: *mut Advice) {
-    drop(unsafe{ Box::from_raw(advice) });
+    drop(unsafe { Box::from_raw(advice) });
 }
 
 type PartialTransaction = Bundle<InProgress<Proof, PartiallyAuthorized>, ZatBalance>;
-// TODO: Remove pub(crate) once handling of blocks is implemented
-pub(crate) type Transaction = Bundle<Authorized, ZatBalance>;
+type Transaction = Bundle<Authorized, ZatBalance>;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_import_transaction(raw_transaction: *const u8, raw_transaction_length: usize) -> *mut Transaction {
@@ -109,12 +115,12 @@ pub extern "C" fn zcash_export_transaction_impl(raw_transaction: *mut u8, transa
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_partial_transaction(transaction: *mut PartialTransaction) {
-    drop(unsafe{ Box::from_raw(transaction) });
+    drop(unsafe { Box::from_raw(transaction) });
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_transaction(transaction: *mut Transaction) {
-    drop(unsafe{ Box::from_raw(transaction) });
+    drop(unsafe { Box::from_raw(transaction) });
 }
 
 fn number_of_players() -> usize {
@@ -174,25 +180,40 @@ fn parse_merkle_paths(merkle_paths: *const u8, merkle_paths_length: usize) -> Op
     }
 
     let merkle_paths = unsafe { slice::from_raw_parts(merkle_paths, merkle_paths_length) };
-    // TODO: It would be nice we didn't panic here if bytes are not a canonical encoding of a pallas field element
-    let anchor = MerkleHashOrchard::from_bytes(merkle_paths[..RAW_ANCHOR_SIZE].try_into().unwrap()).unwrap().into();
-    let merkle_paths = merkle_paths[RAW_ANCHOR_SIZE..]
+    // Parse the anchor (one for all spends)
+    let anchor = MerkleHashOrchard::from_bytes(merkle_paths[..RAW_ANCHOR_SIZE].try_into().unwrap());
+    if anchor.is_none().into() {
+        println!("parse_merkle_paths: non-canonical encoding of the anchor");
+        return None
+    }
+    let anchor = anchor.unwrap().into();
+    // Parse the Merkle paths (one for each spend)
+    let merkle_paths: Option<Vec<_>> = merkle_paths[RAW_ANCHOR_SIZE..]
         .chunks_exact(RAW_PATH_SIZE)
         .map(|chunk| {
-            MerklePath::from_parts(
-                u32::from_le_bytes(chunk[..4].try_into().unwrap()),
-                // TODO: It would be nice we didn't panic here if bytes are not a canonical encoding of a pallas field element
-                chunk[4..]
-                    .chunks_exact(32)
-                    .map(|node| MerkleHashOrchard::from_bytes(node.try_into().unwrap()).unwrap())
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap(),
-            )
+            let position = u32::from_le_bytes(chunk[..4].try_into().unwrap());
+            // Try decoding each chunk into a pallas::Base field element, filter out failures,
+            // then collect into a vector, and try into [pallas::Base; NOTE_COMMITMENT_TREE_DEPTH]
+            let auth_path = chunk[4..]
+                .chunks_exact(32)
+                .filter_map(|node| MerkleHashOrchard::from_bytes(node.try_into().unwrap()).into())
+                .collect::<Vec<_>>()
+                .try_into();
+            // If there were any non-canonical encodings, we got Err here
+            match auth_path {
+                Ok(path) => Some(MerklePath::from_parts(position, path)),
+                Err(_) => {
+                    println!("parse_merkle_paths: non-canonical encoding of an authentication path");
+                    None
+                },
+            }
         })
         .collect();
 
-    Some((anchor, merkle_paths))
+    match merkle_paths {
+        Some(paths) => Some((anchor, paths)),
+        None => None,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -274,8 +295,8 @@ pub extern "C" fn zcash_create_transaction(
     println!("zcash_create_transaction: proving the bundle...");
     let pk = ProvingKey::build();
     let mut rng = SgxRng;
-    // Compute the signature hash of a transaction that has only this Orchard bundle
-    let sighash = signature_hash(&unauthorized);
+    // Compute the signature digest of a transaction that has only this Orchard bundle
+    let sighash = signature_digest(&unauthorized);
     let partially_authorized = match unauthorized.create_proof(&pk, &mut rng) {
         Ok(bundle) => bundle.prepare(rng, sighash.into()),
         Err(err) => {
@@ -297,22 +318,23 @@ pub extern "C" fn zcash_deposited_amount(transaction: *const Transaction, key: *
         .iter()
         .filter_map(|action| {
             let domain = OrchardDomain::for_action(action);
-            try_note_decryption(&domain, &ivk, action).map(|(note, _recipient, _memo)| note)
+            try_note_decryption(&domain, &ivk, action)
+                .map(|(note, _recipient, _memo)| note.value().inner())
         })
-        .map(|note| note.value().inner())
         .sum()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn zcash_hash_transaction(sighash: *mut [u8; 32], transaction: *const PartialTransaction) {
-    unsafe { *sighash = signature_hash(transaction.as_ref().unwrap()); }
+pub extern "C" fn zcash_hash_transaction(sighash: *mut [u8; 32], txid: *mut [u8; 32], transaction: *const PartialTransaction) {
+    unsafe { *sighash = signature_digest(transaction.as_ref().unwrap()); }
+    unsafe { *txid = txid_digest(transaction.as_ref().unwrap()); }
 }
 
 type Signature = redpallas::Signature<redpallas::SpendAuth>;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_sign_transaction(key: *const SpendingKey, advice: *const Advice, sighash: *const [u8; 32]) -> *mut Signature {
-    let ask: SpendAuthorizingKey = unsafe{ key.as_ref() }.unwrap().into();
+    let ask: SpendAuthorizingKey = unsafe { key.as_ref() }.unwrap().into();
     let alpha = unsafe { advice.as_ref() }.unwrap().alpha;
     let signature = ask.randomize(&alpha).sign(SgxRng, unsafe { sighash.as_ref() }.unwrap());
     Box::into_raw(Box::new(signature))
@@ -353,5 +375,5 @@ pub extern "C" fn zcash_authorize_transaction(unauthorized_transaction: *mut Par
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_release_signature(signature: *mut Signature) {
-    drop(unsafe{ Box::from_raw(signature) });
+    drop(unsafe { Box::from_raw(signature) });
 }
