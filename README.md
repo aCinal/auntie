@@ -4,7 +4,7 @@ Intel SGX-based proof-of-concept implementation of the **Auntie** contract execu
 
 ## Usage
 
-Install Intel SGX components, including [the software development kit (SDK) together with the platform software (PSW)](https://github.com/intel/confidential-computing.sgx), the [remote attestation libraries (DCAP)](https://github.com/intel/confidential-computing.tee.dcap), and the [Provisioning Certificate Caching Service (PCCS)](https://github.com/intel/confidential-computing.tee.dcap.pccs).
+Install Intel SGX components, including [the software development kit (SDK) together with the platform software (PSW)](https://github.com/intel/confidential-computing.sgx), the [remote attestation libraries (DCAP)](https://github.com/intel/confidential-computing.tee.dcap), and the [Provisioning Certificate Caching Service (PCCS)](https://github.com/intel/confidential-computing.tee.dcap.pccs). Set up the SGX infrastructure by [provisioning the CPU](https://cc-enabling.trustedservices.intel.com/intel-tdx-enabling-guide/02/infrastructure_setup).
 
 Set the parameters in the top-level `Makefile` (see [the paper](https://eprint.iacr.org/2025/1965) for reference):
 ```Makefile
@@ -38,15 +38,11 @@ int evaluate_functionality(
      * as needed. */
 
     uint32_t lottery_winner;
-    zat_t sum_deposit;
-
-    /* Choose the lottery winner */
     sgx_read_rand(&lottery_winner, sizeof(lottery_winner));
     lottery_winner = lottery_winner % AUNTIE_NUM_PLAYERS;
 
-    for (int i = 0; i < AUNTIE_NUM_PLAYERS; i++)
-        sum_deposit += deposits[i];
-    payouts[lottery_winner] = sum_deposit;
+    /* Be careful about leaking information about the contract's outcome via side channels
+     * or via output lengths */
 
     ...
 
@@ -94,4 +90,4 @@ In Intel SGX, remote attestation is [no longer anonymous](https://community.inte
 
 A single (compressed) Halo2 zk-SNARK is provided for all [*action statements*](https://zips.z.cash/protocol/nu6.pdf#actionstatement) in a transaction (`struct Bundle`). Because of this, we have the operator's TEE produce the proof already in `zcash_create_transaction` as part of clearing the contract and we have the players' TEEs really only sign with the [*randomized spend authorizing key*](https://zips.z.cash/protocol/nu6.pdf#spendauthsig). To facilitate the operator's TEE's creation of the proof, we have the players' TEEs disclose [*full viewing keys*](https://zips.z.cash/protocol/nu6.pdf#orchardkeycomponents) as well as [*spend authorization randomizers*](https://zips.z.cash/protocol/nu6.pdf#spendauthsig). Note that this does not reveal to the operator's TEE (and therefore, potentially, to the operator themselves through side channels) anything it did not already know. Finally, the proof involves demonstrating the knowledge of Merkle paths leading from the input notes' (deposits') commitments to the anchor. These paths as well as the anchor can be provided by the operator who has seen the deposit transactions (and therefore the relevant note commitments) anyway. If the operator provides malformed paths at this point, the settlement transaction will itself be malformed and hence not be accepted by the network. This is equivalent to the operator's withholding the settlement transaction. See [the paper](https://eprint.iacr.org/2025/1965) for a detailed discussion on this.
 
-This implementation deals with Orchard bundles exclusively. The operator receives the settlement as a fully authorized Orchard bundle and is expected to embed it in a shielded transaction with neither a transparent bundle nor a Sapling bundle. The operator cannot cheat as the Orchard bundle produced inside the TEE already commits to this transaction (see `src/common/trusted/rust/zcash_ffi/src/sighash.rs`).
+This implementation deals with Orchard bundles exclusively. The operator receives the settlement as a fully authorized Orchard bundle and is expected to embed it in a shielded transaction with neither a transparent bundle nor a Sapling bundle. The operator cannot cheat as the Orchard bundle produced inside the TEE already commits to this transaction (see `src/common/trusted/rust/zcash_ffi/src/digests.rs`).
