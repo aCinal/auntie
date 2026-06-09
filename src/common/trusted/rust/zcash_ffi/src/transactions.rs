@@ -9,7 +9,7 @@ use orchard::{
     Address,
     Anchor,
     builder::{Builder, BundleType, InProgress, PartiallyAuthorized},
-    bundle::{Authorized, Bundle},
+    bundle::{Authorized, Bundle, ProofSizeEnforcement},
     circuit::ProvingKey,
     keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     Note,
@@ -92,7 +92,7 @@ type Transaction = Bundle<Authorized, ZatBalance>;
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_import_transaction(raw_transaction: *const u8, raw_transaction_length: usize) -> *mut Transaction {
     let slice = unsafe { slice::from_raw_parts(raw_transaction, raw_transaction_length) };
-    match read_v5_bundle(slice) {
+    match read_v5_bundle(slice, ProofSizeEnforcement::Strict) {
         Ok(Some(bundle)) => Box::into_raw(Box::new(bundle)),
         _ => ptr::null_mut(),
     }

@@ -15,8 +15,8 @@ sgx = { version = "0.1.0", path = "../sgx" }
 sha2 = { version = "0.10.0", default-features = false, features = ["force-soft"] }
 uint = { version = "0.10.0", default-features = false }
 zcash_note_encryption = { version = "0.4.1", default-features = false }
-zcash_primitives = { version = "0.27.0", default-features = false }
-zcash_protocol = { version = "0.8.0", default-features = false }
+zcash_primitives = { version = "0.28.0", default-features = false }
+zcash_protocol = { version = "0.9.0", default-features = false }
 
 [patch.crates-io]
 orchard = { git = "https://github.com/aCinal/orchard", branch = "add_spends_with_alphas" }
