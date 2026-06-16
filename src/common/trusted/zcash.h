@@ -34,7 +34,7 @@ void zcash_release_address(struct zcash_address *address);
 
 /** Create advice for Halo2 zk-SNARK generation including the full viewing key and the spend authorization randomizer */
 struct zcash_advice *zcash_create_advice(struct zcash_key *key);
-/** Decode and import advice  */
+/** Decode and import advice */
 struct zcash_advice *zcash_import_advice(const uint8_t *raw_advice, size_t raw_advice_length);
 /** Encode and export advice */
 int zcash_export_advice(uint8_t **raw_advice, size_t *raw_advice_length, const struct zcash_advice *advice);

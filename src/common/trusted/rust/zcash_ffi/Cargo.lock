@@ -383,7 +383,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.5.0"
-source = "git+https://github.com/aCinal/halo2?branch=no_std#63b2610d5dee327337916fcc110f928a482e681d"
+source = "git+https://github.com/aCinal/halo2?branch=no_std#7071c8a9e235fecea97ff62ab4c305ef75a176c1"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -408,7 +408,7 @@ source = "git+https://github.com/aCinal/halo2_legacy_pdqsort?branch=no_std#1a90a
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "git+https://github.com/aCinal/halo2?branch=no_std#63b2610d5dee327337916fcc110f928a482e681d"
+source = "git+https://github.com/aCinal/halo2?branch=no_std#7071c8a9e235fecea97ff62ab4c305ef75a176c1"
 dependencies = [
  "bitvec",
  "ff",
@@ -419,7 +419,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/aCinal/halo2?branch=no_std#63b2610d5dee327337916fcc110f928a482e681d"
+source = "git+https://github.com/aCinal/halo2?branch=no_std#7071c8a9e235fecea97ff62ab4c305ef75a176c1"
 dependencies = [
  "blake2b_simd",
  "ff",
