@@ -40,7 +40,7 @@ export AUNTIE_REFUND_DELAY_BLOCKS     := 60
 export AUNTIE_SETTLE_DELAY_BLOCKS     := 120
 
 # Use marginal fee of 5000 zatoshis per action as recommended in https://zips.z.cash/zip-0317
-export AUNTIE_MINER_FEE_PER_PLAYER    := 5000
+export AUNTIE_MINER_FEE_PER_PARTY     := 5000
 export AUNTIE_OPERATOR_FEE_PER_PLAYER := 5000
 
 export SIGNING_KEY                    := $(ROOT_DIR)/resources/mrsigner.priv

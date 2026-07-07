@@ -102,9 +102,9 @@ int ecall_clear_contract_impl(
     total_deposit_transactions_length = collateral_transaction_length;
 
     collateral_amount = zcash_deposited_amount(deposit_transactions[0], deposit_wallet->key);
-    if (AUNTIE_OPERATOR_COLLATERAL != collateral_amount) {
-        printf("%s: collateral transaction deposits %lu zatoshi(s), expected %lu\n", \
-            __func__, collateral_amount, AUNTIE_OPERATOR_COLLATERAL);
+    if (AUNTIE_OPERATOR_COLLATERAL + AUNTIE_MINER_FEE_PER_PARTY != collateral_amount) {
+        printf("%s: collateral transaction deposits %lu zatoshi(s), expected %lu collateral plus %lu miner's fee\n", \
+            __func__, collateral_amount, AUNTIE_OPERATOR_COLLATERAL, AUNTIE_MINER_FEE_PER_PARTY);
         ret = -EINVAL;
         goto cleanup;
     }
@@ -152,14 +152,14 @@ int ecall_clear_contract_impl(
         deposit_amounts[i] = deposit_payload->deposit_amount;
 
         /* Verify the amount deposited covers the fees at least */
-        if (deposit_amounts[i] < AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
+        if (deposit_amounts[i] < AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
             printf("%s: player %d deposited too little to cover all fees (expected at least %lu zatoshi(s))\n", \
-                __func__, i + 1, AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER);
+                __func__, i + 1, AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER);
             ret = -EINVAL;
             goto cleanup;
         }
         /* Subtract both fees */
-        deposit_amounts[i] -= AUNTIE_MINER_FEE_PER_PLAYER;
+        deposit_amounts[i] -= AUNTIE_MINER_FEE_PER_PARTY;
         deposit_amounts[i] -= AUNTIE_OPERATOR_FEE_PER_PLAYER;
 
         length = deposit_payload->payout_address_offset - deposit_payload->input_offset;
@@ -210,7 +210,7 @@ int ecall_clear_contract_impl(
         goto cleanup;
     }
     /* Pay the operator back their collateral plus a fee */
-    payouts[0] = collateral_amount + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
+    payouts[0] = AUNTIE_OPERATOR_COLLATERAL + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
 
     printf("%s: issuing the settlement transaction\n", __func__);
 

@@ -85,9 +85,9 @@ int ecall_deposit_and_input_impl(const uint8_t *deposit_transaction, size_t depo
     zcash_release_transaction(tx);
 
     /* Verify the deposit at this point already (the operator will double-check this) */
-    if (deposit_amount < AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
+    if (deposit_amount < AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
         printf("%s: deposited too little to cover all fees (expected at least %lu zatoshi(s))\n", \
-            __func__, AUNTIE_MINER_FEE_PER_PLAYER + AUNTIE_OPERATOR_FEE_PER_PLAYER);
+            __func__, AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER);
         return -EINVAL;
     }
 
