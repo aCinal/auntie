@@ -2,7 +2,7 @@ use orchard::bundle::{Authorization, Bundle};
 
 const HEADER: u32 = 0x8000_0005;               // Version 5 with the fOverwintered flag (bit 31) set
 const VERSION_GROUP_ID: u32 = 0x26A7_270A;     // See https://zips.z.cash/protocol/protocol.pdf#txnconsensus
-const CONSENSUS_BRANCH_ID: u32 = 0xC2D6_D0B4;  // NU5 branch ID
+const CONSENSUS_BRANCH_ID: u32 = 0x5437_F330;  // NU6.2 branch ID
 
 pub fn signature_digest<A: Authorization, V: Copy + Into<i64>>(bundle: &Bundle<A, V>) -> [u8; 32] {
     // Compute a ZIP-244 signature digest for a transaction with just the Orchard bundle provided,

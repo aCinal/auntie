@@ -12,8 +12,7 @@ use sgx::rand::SgxRng;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_create_key() -> *mut SpendingKey {
-    // Mirror internal "SpendingKey::random" method: note that, if ask=0,
-    // we should discard the corresponding sk
+    // Mirror internal "SpendingKey::random" method
     let key = loop {
         let mut bytes = [0; 32];
         SgxRng.try_fill_bytes(&mut bytes).unwrap();
