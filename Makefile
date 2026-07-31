@@ -33,11 +33,11 @@ export PLAYER_ENCLAVE_NAME            := auntie_player_tee
 # n in the paper
 export AUNTIE_NUM_PLAYERS             := 3
 # delta in the paper
-export AUNTIE_OPERATOR_COLLATERAL     := 27500000
+export AUNTIE_OPERATOR_COLLATERAL     := 10000
 # tau in the paper
-export AUNTIE_REFUND_DELAY_BLOCKS     := 60
+export AUNTIE_REFUND_DELAY_BLOCKS     := 40
 # tau' in the paper
-export AUNTIE_SETTLE_DELAY_BLOCKS     := 120
+export AUNTIE_SETTLE_DELAY_BLOCKS     := 80
 
 # Use marginal fee of 5000 zatoshis per action as recommended in https://zips.z.cash/zip-0317
 export AUNTIE_MINER_FEE_PER_PARTY     := 5000

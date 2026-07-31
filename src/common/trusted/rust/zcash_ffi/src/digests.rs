@@ -1,61 +1,64 @@
+use blake2b_simd::Hash as Blake2bHash;
 use orchard::bundle::{Authorization, Bundle};
+use zcash_primitives::transaction::{
+    sighash::{signature_hash, SignableInput},
+    txid::{to_txid, TxIdDigester},
+    Authorization as TxAuthorization, TransactionData, TxDigests, TxVersion,
+};
+use zcash_protocol::{
+    consensus::{BlockHeight, BranchId},
+    value::ZatBalance,
+};
 
-const HEADER: u32 = 0x8000_0005;               // Version 5 with the fOverwintered flag (bit 31) set
-const VERSION_GROUP_ID: u32 = 0x26A7_270A;     // See https://zips.z.cash/protocol/protocol.pdf#txnconsensus
-const CONSENSUS_BRANCH_ID: u32 = 0x5437_F330;  // NU6.2 branch ID
+// Compute ZIP-244 digests (https://zips.z.cash/zip-0244)
 
-pub fn signature_digest<A: Authorization, V: Copy + Into<i64>>(bundle: &Bundle<A, V>) -> [u8; 32] {
-    // Compute a ZIP-244 signature digest for a transaction with just the Orchard bundle provided,
-    // no transparent bundle, and no Sapling bundle, which, according to https://zips.z.cash/zip-0244,
-    // is identical to the txid digest
-    txid_digest(bundle)
+const CONSENSUS_BRANCH_ID: BranchId = BranchId::Nu6_3;
+
+struct DigestAuth<A>(core::marker::PhantomData<A>);
+// To call TransactionData::from_parts_v6 we need to define impl TxAuthorization
+// that agrees with the authorization stage of our Orchard/Ironwood bundle, which
+// will either be InProgress<Proof, Unauthorized> (when called from zcash_create_transaction)
+// or InProgress<Proof, PartiallyAuthorized> (when called from zcash_hash_transaction);
+// use generics to handle both cases cleanly
+impl<A: Authorization> TxAuthorization for DigestAuth<A> {
+    type TransparentAuth = zcash_transparent::builder::Coinbase;
+    type SaplingAuth = sapling_crypto::bundle::Authorized;
+    type OrchardAuth = A;
 }
 
-pub fn txid_digest<A: Authorization, V: Copy + Into<i64>>(bundle: &Bundle<A, V>) -> [u8; 32] {
-    // Compute a ZIP-244 txid digest for a transaction with just the Orchard bundle provided,
-    // no transparent bundle, and no Sapling bundle (see https://zips.z.cash/zip-0244)
+fn tx_data_and_digests<A: Authorization + Clone>(
+    bundle: &Bundle<A, ZatBalance>,
+) -> (TransactionData<DigestAuth<A>>, TxDigests<Blake2bHash>)
+where
+    A::SpendAuth: Clone,
+{
+    // TODO: Study if setting nExpiryHeight (https://zips.z.cash/zip-0203) to, say,
+    //       the checkpoint block height + AUNTIE_*_DELAY_BLOCKS can do us some good
+    let tx_data = TransactionData::<DigestAuth<A>>::from_parts_v6(
+        CONSENSUS_BRANCH_ID,
+        0,                         // lock_time
+        BlockHeight::from_u32(0),  // expiry_height
+        None,                      // transparent_bundle
+        None,                      // sapling_bundle
+        None,                      // orchard_bundle
+        Some(bundle.clone()),      // ironwood_bundle
+    );
+    let digests = tx_data.digest(TxIdDigester);
+    (tx_data, digests)
+}
 
-    let hasher = |personal: &[u8; 16]| {
-        blake2b_simd::Params::new()
-            .hash_length(32)
-            .personal(personal)
-            .to_state()
-    };
+pub fn signature_digest<A: Authorization + Clone>(bundle: &Bundle<A, ZatBalance>) -> [u8; 32]
+where
+    A::SpendAuth: Clone,
+{
+    let (tx_data, txid_parts) = tx_data_and_digests(bundle);
+    *signature_hash(&tx_data, &SignableInput::Shielded, &txid_parts).as_ref()
+}
 
-    // According to ZIP-244, the txid hash is computed as a BLAKE2b-256 hash of the following values:
-    //   T.1: header_digest          (32-byte hash output)
-    //   T.2: transparent_sig_digest (32-byte hash output)
-    //   T.3: sapling_digest         (32-byte hash output)
-    //   T.4: orchard_digest         (32-byte hash output)
-    // with personalization field set to "ZcashTxHash_" || CONSENSUS_BRANCH_ID
-
-    // T.1: header_digest
-    let header_digest = {
-        let mut h = hasher(b"ZTxIdHeadersHash");
-        h.update(&HEADER.to_le_bytes());
-        h.update(&VERSION_GROUP_ID.to_le_bytes());
-        h.update(&CONSENSUS_BRANCH_ID.to_le_bytes());
-        h.update(&0u32.to_le_bytes());  // lock_time
-        h.update(&0u32.to_le_bytes());  // nExpiryHeight
-        h.finalize()
-    };
-
-    // T.2: transparent_digest
-    let transparent_digest = hasher(b"ZTxIdTranspaHash").finalize();
-    // T.3: sapling_digest
-    let sapling_digest = hasher(b"ZTxIdSaplingHash").finalize();
-    // T.4: orchard_digest
-    let orchard_digest = bundle.commitment().0;
-
-    // The final txid hash
-    let mut personal = [0u8; 16];
-    personal[..12].copy_from_slice(b"ZcashTxHash_");
-    personal[12..].copy_from_slice(&CONSENSUS_BRANCH_ID.to_le_bytes());
-    let mut h = hasher(&personal);
-    h.update(header_digest.as_bytes());
-    h.update(transparent_digest.as_bytes());
-    h.update(sapling_digest.as_bytes());
-    h.update(orchard_digest.as_bytes());
-
-    h.finalize().as_bytes().try_into().unwrap()
+pub fn txid_digest<A: Authorization + Clone>(bundle: &Bundle<A, ZatBalance>) -> [u8; 32]
+where
+    A::SpendAuth: Clone,
+{
+    let (_tx_data, txid_parts) = tx_data_and_digests(bundle);
+    *to_txid(TxVersion::V6, CONSENSUS_BRANCH_ID, &txid_parts).as_ref()
 }

@@ -28,6 +28,7 @@ $(RUST_PACKAGES):
 
 %_clean:
 	cargo clean --manifest-path $(RUST_DIR)/$*/Cargo.toml
+	cargo update --manifest-path $(RUST_DIR)/$*/Cargo.toml
 	@rm -f lib$*.a
 
 clean: $(addsuffix _clean, $(RUST_PACKAGES))

@@ -4,6 +4,7 @@
 #include "core_common.h"
 #include "players.h"
 #include "functionality.h"
+#include "memo.h"
 #include "ocall.h"
 #include <errno.h>
 #include <string.h>
@@ -77,7 +78,13 @@ int ecall_clear_contract_impl(
     uint32_t offset;
     uint8_t settlement_sighash[32];
     uint8_t settlement_txid[32];
+    uint8_t memo[512];
     int ret;
+
+    /* Include a common memo in the settlement transaction identifying
+     * the execution of the protocol to parties with the incoming viewing
+     * keys associated to the payout keys */
+    get_settlement_memo(memo);
 
     payout_addresses[0] = zcash_import_address(payout_address, payout_address_length);
     if (!payout_addresses[0]) {
@@ -215,7 +222,15 @@ int ecall_clear_contract_impl(
     printf("%s: issuing the settlement transaction\n", __func__);
 
     /* Issue the settlement transaction */
-    unauthorized_settlement = zcash_create_transaction(deposit_transactions, payouts, payout_addresses, advices, merkle_paths, merkle_paths_length);
+    unauthorized_settlement = zcash_create_transaction(
+        deposit_transactions,
+        payouts,
+        payout_addresses,
+        advices,
+        merkle_paths,
+        merkle_paths_length,
+        memo
+    );
     if (!unauthorized_settlement) {
         printf("%s: failed to create settlement transaction\n", __func__);
         ret = -EFAULT;

@@ -10,16 +10,17 @@ use orchard::{
     Address,
     Anchor,
     builder::{Builder, BundleType, InProgress, PartiallyAuthorized},
-    bundle::{Authorized, Bundle, ProofSizeEnforcement},
-    circuit::ProvingKey,
+    bundle::{Authorized, Bundle, BundleVersion},
+    circuit::{OrchardCircuitVersion, ProvingKey},
     keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     Note,
     NOTE_COMMITMENT_TREE_DEPTH,
-    note_encryption::OrchardDomain,
+    note_encryption::IronwoodDomain,
     primitives::redpallas,
     Proof,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
+    ValuePool,
 };
 use pasta_curves::{
     group::ff::{Field, PrimeField},
@@ -31,10 +32,13 @@ use sgx::{
 };
 use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::transaction::components::orchard::{
-    read_v5_bundle,
-    write_v5_bundle,
+    read_v6_bundle,
+    write_v6_bundle,
 };
-use zcash_protocol::value::ZatBalance;
+use zcash_protocol::{
+    consensus::BranchId,
+    value::ZatBalance,
+};
 
 #[derive(Debug)]
 pub struct Advice {
@@ -93,7 +97,7 @@ type Transaction = Bundle<Authorized, ZatBalance>;
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_import_transaction(raw_transaction: *const u8, raw_transaction_length: usize) -> *mut Transaction {
     let slice = unsafe { slice::from_raw_parts(raw_transaction, raw_transaction_length) };
-    match read_v5_bundle(slice, ProofSizeEnforcement::Strict) {
+    match read_v6_bundle(slice, BranchId::Nu6_3, ValuePool::Ironwood) {
         Ok(Some(bundle)) => Box::into_raw(Box::new(bundle)),
         _ => ptr::null_mut(),
     }
@@ -102,14 +106,14 @@ pub extern "C" fn zcash_import_transaction(raw_transaction: *const u8, raw_trans
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_get_raw_transaction_length(transaction: *const Transaction) -> usize {
     let mut buffer: Vec<u8> = Vec::new();
-    write_v5_bundle(unsafe { transaction.as_ref() }, &mut buffer).unwrap();
+    write_v6_bundle(unsafe { transaction.as_ref() }, &mut buffer).unwrap();
     buffer.len()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zcash_export_transaction_impl(raw_transaction: *mut u8, transaction: *const Transaction) {
     let mut buffer: Vec<u8> = Vec::new();
-    write_v5_bundle(unsafe { transaction.as_ref() }, &mut buffer).unwrap();
+    write_v6_bundle(unsafe { transaction.as_ref() }, &mut buffer).unwrap();
     // The caller should have first called zcash_get_raw_transaction_length and allocated a sufficiently-sized buffer
     unsafe { ptr::copy_nonoverlapping(buffer.as_ptr(), raw_transaction, buffer.len()); }
 }
@@ -190,7 +194,7 @@ fn extract_unique_note<'a, A: 'a>(actions: impl Iterator<Item = (&'a &'a Action<
     let ivk = advice.fvk.to_ivk(Scope::External).prepare();
     let notes: Vec<_> = actions
         .filter_map(|(&action, path)| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = IronwoodDomain::for_action(action);
             try_note_decryption(&domain, &ivk, action)
                 .map(|(note, _recipient, _memo)| (note, path.clone()))
         })
@@ -215,6 +219,7 @@ pub extern "C" fn zcash_create_transaction(
     advices: *const *const Advice,
     merkle_paths: *const u8,
     merkle_paths_length: usize,
+    memo: *const [u8; 512],
 ) -> *mut PartialTransaction {
     // Convert raw pointers into iterators over references
     let inputs = ref_from_ptr_for_each_party(inputs);
@@ -252,7 +257,18 @@ pub extern "C" fn zcash_create_transaction(
         },
     };
 
-    let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+    let mut builder = match Builder::new(
+        BundleType::DEFAULT,
+        BundleVersion::ironwood_v3(),
+        BundleVersion::ironwood_v3().default_flags(),
+        anchor,
+    ) {
+        Ok(builder) => builder,
+        Err(err) => {
+            println!("zcash_create_transaction: failed to create the builder with error {}", err);
+            return ptr::null_mut();
+        },
+    };
     println!("zcash_create_transaction: adding spends...");
     // Add spends
     let result: Result<Vec<_>, _> = inputs_with_paths
@@ -277,13 +293,14 @@ pub extern "C" fn zcash_create_transaction(
     payouts
         .zip(payout_addresses)
         .for_each(|(payout, recipient)| {
-            // We do not check for payout > 0 as we would be adding dummy outputs anyway to not leak any information
-            // about contract result
+            // We do not check for payout > 0 as we would be adding dummy outputs anyway
+            // to not leak any information about contract result; we also use dummy outgoing
+            // viewing key
             builder.add_output(
                 None,
                 recipient.clone(),
                 NoteValue::from_raw(*payout),
-                [0u8; 512],
+                unsafe { *memo },
             ).unwrap()
         });
 
@@ -302,7 +319,7 @@ pub extern "C" fn zcash_create_transaction(
     };
 
     println!("zcash_create_transaction: proving the bundle...");
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
     let mut rng = SgxRng;
     // Compute the signature digest of a transaction that has only this Orchard bundle
     let sighash = signature_digest(&unauthorized);
@@ -326,7 +343,7 @@ pub extern "C" fn zcash_deposited_amount(transaction: *const Transaction, key: *
         .actions()
         .iter()
         .filter_map(|action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = IronwoodDomain::for_action(action);
             try_note_decryption(&domain, &ivk, action)
                 .map(|(note, _recipient, _memo)| note.value().inner())
         })

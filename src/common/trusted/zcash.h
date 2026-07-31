@@ -56,7 +56,8 @@ struct zcash_partial_transaction *zcash_create_transaction(
     struct zcash_address *const payout_addresses[AUNTIE_NUM_PLAYERS + 1],
     struct zcash_advice *const advices[AUNTIE_NUM_PLAYERS + 1],
     const uint8_t *merkle_paths,
-    size_t merkle_paths_lengths
+    size_t merkle_paths_lengths,
+    const uint8_t memo[512]
 );
 
 /** Get amount deposited by a transaction to a specified address */

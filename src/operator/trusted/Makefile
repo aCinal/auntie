@@ -9,6 +9,7 @@ ENC_C_FILES := \
 	core.c \
 	entry.c \
 	functionality.c \
+	memo.c \
 	mutual_attestation.c \
 	players.c
 
