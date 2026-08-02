@@ -62,7 +62,8 @@ fn passes_difficulty_filter(block: &[u8; BLOCK_HEADER_LENGTH]) -> bool {
     //            nBits = ThresholdBits(height) = ToCompact(Threshold(height)), where Threshold(height) <= PoWLimit
     //
     // where nBits is the "compact" difficulty declared in the block header and PoWLimit = 2^243 - 1 for Mainnet
-    // (see https://zips.z.cash/protocol/protocol.pdf#constants). The difficulty filter dictates we check that
+    // (see https://zips.z.cash/protocol/protocol.pdf#constants) and 2^251 - 1 for Testnet. The difficulty filter dictates
+    // we check that
     //
     //                                             SHA-256d(block) <= ToTarget(nBits)
     //
@@ -70,9 +71,15 @@ fn passes_difficulty_filter(block: &[u8; BLOCK_HEADER_LENGTH]) -> bool {
     // and so we can check that
     //
     //     SHA-256d(block) <= ToTarget(nBits) = ToTarget(ToCompact(Threshold(height))) <= Threshold(height) <= PoWLimit.
+    //
     let digest = hash_this_block(block);
     let actual = U256::from_little_endian(&digest);
+
+    #[cfg(auntie_testnet)]
+    let target = U256::from(1) << 251;
+    #[cfg(not(auntie_testnet))]
     let target = U256::from(1) << 243;
+
     actual < target
 }
 

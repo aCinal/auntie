@@ -31,3 +31,6 @@ panic = "abort"
 
 [profile.dev]
 panic = "abort"
+
+[lints.rust]
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(auntie_testnet)'] }

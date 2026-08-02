@@ -22,6 +22,10 @@ RUSTFLAGS += --cfg chacha20_force_sse2 --cfg poly1305_force_soft
 # TODO: change to '--cfg chacha20_backend="sse" --cfg poly1305_backend="soft"'
 #       once zcash_note_encryption starts using newer versions of the crates
 
+ifeq ($(AUNTIE_TESTNET), 1)
+	RUSTFLAGS += --cfg auntie_testnet
+endif
+
 $(RUST_PACKAGES):
 	cargo build --manifest-path $(RUST_DIR)/$@/Cargo.toml $(CARGO_FLAGS)
 	@cp $(RUST_DIR)/$@/target/$(RELEASE)/lib$@.a $(RUST_DIR)/lib$@.a

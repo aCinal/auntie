@@ -46,6 +46,9 @@ export AUNTIE_CHECKPOINT_BLOCK_HASH   := 000136c7dd12037fe5f170360c745cddb20080a
 export AUNTIE_MINER_FEE_PER_PARTY     := 5000
 export AUNTIE_OPERATOR_FEE_PER_PLAYER := 5000
 
+# Set to 1 to build for testnet
+export AUNTIE_TESTNET                 := 0
+
 export SIGNING_KEY                    := $(ROOT_DIR)/resources/mrsigner.priv
 
 export EDGER8R_COMMON_SEARCH_PATHS := \
