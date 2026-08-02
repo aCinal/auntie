@@ -7,6 +7,7 @@ edition = "2024"
 blake2b_simd = { version = "1", default-features = false }
 corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
 equihash = { version = "0.3", default-features = false }
+hex = { version = "0.4.3", default-features = false }
 orchard = { git = "https://github.com/aCinal/orchard", branch = "add_spends_with_alphas", default-features = false, features = ["circuit"] }
 pasta_curves = { version = "0.5.2", default-features = false }
 rand_core = { version = "0.6", default-features = false }

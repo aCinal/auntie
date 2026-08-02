@@ -25,6 +25,8 @@ void get_settlement_memo(uint8_t memo[512])
     space_remaining = 512;
     cursor = (char *) memo;
 
+#define STR_IMPL(x)  #x
+#define STR(x)       STR_IMPL(x)
 #define APPEND_TO_MEMO(__fmt, ...) ({ \
         written = snprintf(cursor, space_remaining, __fmt, ##__VA_ARGS__); \
         space_remaining -= written; \
@@ -32,6 +34,7 @@ void get_settlement_memo(uint8_t memo[512])
     })
 
     APPEND_TO_MEMO("Auntie protocol (https://eprint.iacr.org/2025/1965), ");
+    APPEND_TO_MEMO("checkpoint block: " STR(AUNTIE_CHECKPOINT_BLOCK_HASH) ", ");
     APPEND_TO_MEMO("number of players: %d, ", AUNTIE_NUM_PLAYERS);
     APPEND_TO_MEMO("operator collateral: %d, ", AUNTIE_OPERATOR_COLLATERAL);
     APPEND_TO_MEMO("operator fee per player: %d, ", AUNTIE_OPERATOR_FEE_PER_PLAYER);

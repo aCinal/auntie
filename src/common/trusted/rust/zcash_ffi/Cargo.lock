@@ -1056,6 +1056,7 @@ dependencies = [
  "blake2b_simd",
  "corez",
  "equihash",
+ "hex",
  "orchard",
  "pasta_curves",
  "rand_core",

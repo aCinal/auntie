@@ -219,6 +219,7 @@ int ecall_clear_contract_impl(
     /* Pay the operator back their collateral plus a fee */
     payouts[0] = AUNTIE_OPERATOR_COLLATERAL + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
 
+
     printf("%s: issuing the settlement transaction\n", __func__);
 
     /* Issue the settlement transaction */

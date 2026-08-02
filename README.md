@@ -11,11 +11,14 @@ Set the parameters in the top-level `Makefile` (see [the paper](https://eprint.i
 # n in the paper
 export AUNTIE_NUM_PLAYERS             := 3
 # delta in the paper
-export AUNTIE_OPERATOR_COLLATERAL     := 27500000
+export AUNTIE_OPERATOR_COLLATERAL     := 10000
 # tau in the paper
-export AUNTIE_REFUND_DELAY_BLOCKS     := 60
+export AUNTIE_REFUND_DELAY_BLOCKS     := 40
 # tau' in the paper
-export AUNTIE_SETTLE_DELAY_BLOCKS     := 120
+export AUNTIE_SETTLE_DELAY_BLOCKS     := 80
+
+# Checkpoint block hash in RPC byte order
+export AUNTIE_CHECKPOINT_BLOCK_HASH   := 005286d69e7fa1624e64f44e20bd3b2da2923fb2e21e2fa7c58f7b1c641d9f1d
 
 # Fees
 export AUNTIE_MINER_FEE_PER_PARTY     := 5000
@@ -49,7 +52,6 @@ int evaluate_functionality(
     return 0;
 }
 ```
-Finally, modify `CHECKPOINT_BLOCK_HASH` in `src/common/trusted/rust/zcash_ffi/src/blocks.rs`.
 
 Build and sign the TEEs:
 ```bash

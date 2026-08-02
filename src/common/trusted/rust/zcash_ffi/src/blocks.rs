@@ -13,9 +13,15 @@ construct_uint! {
     pub struct U256(4);
 }
 
-// Hash of the checkpoint block relative to which contract timeout and delay of settlement are measured
-const CHECKPOINT_BLOCK_HASH: [u8; 32] = [0; 32];
 const BLOCK_HEADER_LENGTH: usize = 1487;
+
+fn checkpoint_block_hash() -> [u8; 32] {
+    let mut block_hash = [0u8; 32];
+    hex::decode_to_slice(env!("AUNTIE_CHECKPOINT_BLOCK_HASH"), &mut block_hash).unwrap();
+    // Expect AUNTIE_CHECKPOINT_BLOCK_HASH to be in RPC encoding, but need wire encoding
+    block_hash.reverse();
+    block_hash
+}
 
 fn sha256d(inputs: &[&[u8]]) -> [u8; 32] {
     let mut inner = Sha256::new();
@@ -102,7 +108,7 @@ pub extern "C" fn zcash_authorized_and_buried(txid: *const [u8; 32], _deposit_ke
     let blocks = unsafe { slice::from_raw_parts(blocks, blocks_length) };
     let txid = unsafe { txid.as_ref() }.unwrap();
 
-    let mut previous_block_hash = CHECKPOINT_BLOCK_HASH;
+    let mut previous_block_hash = checkpoint_block_hash();
     let mut count_since_settlement = 0;
     let mut settlement_found = false;
     let mut stream = blocks;
@@ -169,7 +175,7 @@ pub extern "C" fn zcash_blocks_since_checkpoint(blocks: *const u8, blocks_length
         .map(|chunk| chunk.try_into().unwrap());
 
     // For each block header, check that it correctly links to the previous one and has correct proof of work
-    let mut previous_block_hash = CHECKPOINT_BLOCK_HASH;
+    let mut previous_block_hash = checkpoint_block_hash();
     let mut count = 0;
     for block in blocks {
         previous_block_hash = match verify_block_header(&block, previous_block_hash) {
