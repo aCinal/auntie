@@ -65,8 +65,7 @@ int ecall_clear_contract_impl(
     uint8_t *outputs[AUNTIE_NUM_PLAYERS] = {};
     size_t input_lengths[AUNTIE_NUM_PLAYERS];
     size_t output_lengths[AUNTIE_NUM_PLAYERS];
-    zat_t collateral_amount;
-    zat_t deposit_amounts[AUNTIE_NUM_PLAYERS];
+    zat_t deposit_amounts[AUNTIE_NUM_PLAYERS + 1];
     zat_t payouts[AUNTIE_NUM_PLAYERS + 1];
     struct zcash_transaction *deposit_transactions[AUNTIE_NUM_PLAYERS + 1] = {};
     struct zcash_address *payout_addresses[AUNTIE_NUM_PLAYERS + 1] = {};
@@ -108,10 +107,10 @@ int ecall_clear_contract_impl(
     }
     total_deposit_transactions_length = collateral_transaction_length;
 
-    collateral_amount = zcash_deposited_amount(deposit_transactions[0], deposit_wallet->key);
-    if (AUNTIE_OPERATOR_COLLATERAL + AUNTIE_MINER_FEE_PER_PARTY != collateral_amount) {
-        printf("%s: collateral transaction deposits %lu zatoshi(s), expected %lu collateral plus %lu miner's fee\n", \
-            __func__, collateral_amount, AUNTIE_OPERATOR_COLLATERAL, AUNTIE_MINER_FEE_PER_PARTY);
+    deposit_amounts[0] = zcash_deposited_amount(deposit_transactions[0], deposit_wallet->key);
+    if (deposit_amounts[0] < AUNTIE_OPERATOR_COLLATERAL + AUNTIE_MINER_FEE_PER_PARTY) {
+        printf("%s: collateral transaction deposits %lu zatoshi(s), expected at least %lu collateral plus %lu miner's fee\n", \
+            __func__, deposit_amounts[0], AUNTIE_OPERATOR_COLLATERAL, AUNTIE_MINER_FEE_PER_PARTY);
         ret = -EINVAL;
         goto cleanup;
     }
@@ -156,18 +155,18 @@ int ecall_clear_contract_impl(
         (void) memcpy(raw_deposit_transactions[i], deposit_payload->data + deposit_payload->deposit_transaction_offset, length);
         raw_deposit_transactions_lengths[i] = length;
         total_deposit_transactions_length += length;
-        deposit_amounts[i] = deposit_payload->deposit_amount;
+        deposit_amounts[i + 1] = deposit_payload->deposit_amount;
 
         /* Verify the amount deposited covers the fees at least */
-        if (deposit_amounts[i] < AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
+        if (deposit_amounts[i + 1] < AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER) {
             printf("%s: player %d deposited too little to cover all fees (expected at least %lu zatoshi(s))\n", \
                 __func__, i + 1, AUNTIE_MINER_FEE_PER_PARTY + AUNTIE_OPERATOR_FEE_PER_PLAYER);
             ret = -EINVAL;
             goto cleanup;
         }
         /* Subtract both fees */
-        deposit_amounts[i] -= AUNTIE_MINER_FEE_PER_PARTY;
-        deposit_amounts[i] -= AUNTIE_OPERATOR_FEE_PER_PLAYER;
+        deposit_amounts[i + 1] -= AUNTIE_MINER_FEE_PER_PARTY;
+        deposit_amounts[i + 1] -= AUNTIE_OPERATOR_FEE_PER_PLAYER;
 
         length = deposit_payload->payout_address_offset - deposit_payload->input_offset;
         inputs[i] = malloc(length);
@@ -202,7 +201,7 @@ int ecall_clear_contract_impl(
     }
 
     printf("%s: evaluating the functionality\n", __func__);
-    /* Offset payouts by 1 as the operator is not part of the functionality and
+    /* Offset deposits and payouts by 1 as the operator is not part of the functionality and
      * only redeems their collateral and collects fees */
     ret = evaluate_functionality(
         outputs,
@@ -210,15 +209,14 @@ int ecall_clear_contract_impl(
         payouts + 1,
         inputs,
         input_lengths,
-        deposit_amounts
+        deposit_amounts + 1
     );
     if (ret) {
         printf("%s: failed to evaluate functionality with error %d\n", __func__, ret);
         goto cleanup;
     }
     /* Pay the operator back their collateral plus a fee */
-    payouts[0] = AUNTIE_OPERATOR_COLLATERAL + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
-
+    payouts[0] = (deposit_amounts[0] - AUNTIE_MINER_FEE_PER_PARTY) + AUNTIE_OPERATOR_FEE_PER_PLAYER * AUNTIE_NUM_PLAYERS;
 
     printf("%s: issuing the settlement transaction\n", __func__);
 

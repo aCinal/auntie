@@ -141,59 +141,62 @@ fn ref_from_ptr_for_each_party<'a, T: 'a>(ptrs: *const *const T) -> impl Iterato
     for_each_party(ptrs).map(|&ptr| unsafe { ptr.as_ref() }.unwrap())
 }
 
-fn parse_merkle_paths(merkle_paths: *const u8, merkle_paths_length: usize, notes_count: usize) -> Option<(Anchor, Vec<MerklePath>)> {
+fn parse_merkle_paths(merkle_paths: *const u8, merkle_paths_length: usize) -> Option<(Anchor, Vec<MerklePath>)> {
     // Assume the Merkle paths file has the format [anchor][pos0 as u32][path0][pos1 as u32][path1]...[posN as u32][pathN]
     const RAW_PATH_SIZE: usize = 32 * NOTE_COMMITMENT_TREE_DEPTH + 4;
     const RAW_ANCHOR_SIZE: usize = 32;
 
-    let expected_size = RAW_ANCHOR_SIZE + RAW_PATH_SIZE * notes_count;
-    if merkle_paths_length != expected_size {
-        println!("parse_merkle_paths: Merkle paths size {} invalid, expected {} ({} note(s))", merkle_paths_length, expected_size, notes_count);
+    let merkle_paths = unsafe { slice::from_raw_parts(merkle_paths, merkle_paths_length) };
+
+    // Verify the size of the buffer
+    if merkle_paths.len() < RAW_ANCHOR_SIZE {
+        println!("parse_merkle_paths: buffer too short");
+        return None
+    }
+    let paths_length = merkle_paths.len() - RAW_ANCHOR_SIZE;
+    if paths_length % RAW_PATH_SIZE != 0 {
+        println!("parse_merkle_paths: bad buffer, (length - 32) not divisible by path size");
         return None
     }
 
-    let merkle_paths = unsafe { slice::from_raw_parts(merkle_paths, merkle_paths_length) };
+    let (anchor_bytes, paths_bytes) = merkle_paths.split_at(RAW_ANCHOR_SIZE);
+
     // Parse the anchor (one for all spends)
-    let anchor = MerkleHashOrchard::from_bytes(merkle_paths[..RAW_ANCHOR_SIZE].try_into().unwrap());
+    let anchor = MerkleHashOrchard::from_bytes(anchor_bytes.try_into().unwrap());
     if anchor.is_none().into() {
         println!("parse_merkle_paths: non-canonical encoding of the anchor");
         return None
     }
     let anchor = anchor.unwrap().into();
-    // Parse the Merkle paths (one for each spend)
-    let merkle_paths: Option<Vec<_>> = merkle_paths[RAW_ANCHOR_SIZE..]
-        .chunks_exact(RAW_PATH_SIZE)
-        .map(|chunk| {
-            let position = u32::from_le_bytes(chunk[..4].try_into().unwrap());
-            // Try decoding each chunk into a pallas::Base field element, filter out failures,
-            // then collect into a vector, and try into [pallas::Base; NOTE_COMMITMENT_TREE_DEPTH]
-            let auth_path = chunk[4..]
-                .chunks_exact(32)
-                .filter_map(|node| MerkleHashOrchard::from_bytes(node.try_into().unwrap()).into())
-                .collect::<Vec<_>>()
-                .try_into();
-            // If there were any non-canonical encodings, we got Err here
-            match auth_path {
-                Ok(path) => Some(MerklePath::from_parts(position, path)),
-                Err(_) => {
-                    println!("parse_merkle_paths: non-canonical encoding of an authentication path");
-                    None
-                },
-            }
-        })
-        .collect();
 
-    match merkle_paths {
-        Some(paths) => Some((anchor, paths)),
-        None => None,
+    let mut paths = Vec::with_capacity(paths_length / RAW_ANCHOR_SIZE);
+    // Parse the Merkle paths (one for each spend)
+    for chunk in paths_bytes.chunks_exact(RAW_PATH_SIZE) {
+        let (position_bytes, path_bytes) = chunk.split_at(4);
+        let position = u32::from_le_bytes(position_bytes.try_into().unwrap());
+
+        let mut path = Vec::with_capacity(NOTE_COMMITMENT_TREE_DEPTH);
+        for path_node in path_bytes.chunks_exact(32) {
+            let node = MerkleHashOrchard::from_bytes(path_node.try_into().unwrap());
+            if node.is_none().into() {
+                println!("parse_merkle_path: non-canonical encoding of a path node");
+                return None
+            }
+            path.push(node.unwrap())
+        }
+
+        paths.push(MerklePath::from_parts(position, path.try_into().unwrap()));
     }
+
+    Some((anchor, paths))
 }
 
-fn extract_unique_note<'a, A: 'a>(actions: impl Iterator<Item = (&'a &'a Action<A>, &'a MerklePath)>, advice: &Advice) -> Option<(Note, MerklePath)> {
+fn extract_unique_note<'a, A: 'a>(actions: impl Iterator<Item = &'a Action<A>>, paths: impl Iterator <Item = MerklePath>, advice: &Advice) -> Option<(Note, MerklePath)> {
     // Prepare the decryption key
     let ivk = advice.fvk.to_ivk(Scope::External).prepare();
-    let notes: Vec<_> = actions
-        .filter_map(|(&action, path)| {
+    let note_path_pairs: Vec<_> = actions
+        .zip(paths)
+        .filter_map(|(action, path)| {
             let domain = IronwoodDomain::for_action(action);
             try_note_decryption(&domain, &ivk, action)
                 .map(|(note, _recipient, _memo)| (note, path.clone()))
@@ -202,8 +205,8 @@ fn extract_unique_note<'a, A: 'a>(actions: impl Iterator<Item = (&'a &'a Action<
     // Assert there is exactly one note that matches the advice, but fail gracefully so that
     // the operator can always get a refund in case players misbehave (this would be redundant
     // if we checked there was only one note in zcash_deposited_amount)
-    match notes.len() {
-        1 => Some(notes[0].clone()),
+    match note_path_pairs.len() {
+        1 => Some(note_path_pairs[0].clone()),
         n => {
             println!("extract_unique_note: bundle has {n} notes addressed to the deposit address");
             None
@@ -226,36 +229,33 @@ pub extern "C" fn zcash_create_transaction(
     let payouts = for_each_party(payouts);
     let payout_addresses = ref_from_ptr_for_each_party(payout_addresses);
     let advices = ref_from_ptr_for_each_party(advices);
-
-    // Extract all actions from the deposit transactions
-    let actions: Vec<_> = inputs
-        .flat_map(|bundle| bundle.actions())
-        .collect();
-
-    // Expect the operator to provide a Merkle path for each output in the deposit transactions
-    // (some of these will not be needed as corresponding to dummy outputs or change transfers)
-    println!("zcash_create_transaction: parsing {} Merkle paths...", actions.len());
-    let (anchor, merkle_paths) = match parse_merkle_paths(merkle_paths, merkle_paths_length, actions.len()) {
+    // Parse Merkle paths
+    let (anchor, merkle_paths) = match parse_merkle_paths(merkle_paths, merkle_paths_length) {
         Some((anchor, paths)) => (anchor, paths),
-        _ => return ptr::null_mut()
+        _ => return ptr::null_mut(),
     };
+    println!("zcash_create_transaction: parsed {} Merkle path(s)", merkle_paths.len());
 
-    println!("zcash_create_transaction: extracting relevant notes...");
-    // Match actions with Merkle paths, then, for each advice, find exactly one action that
-    // matches it and filter out irrelevant pairs
-    let inputs_with_paths: Option<Vec<_>> = advices
-        .clone()
-        .map(|advice| {
-            extract_unique_note(actions.iter().zip(merkle_paths.iter()), advice)
-        })
-        .collect();
-    let inputs_with_paths = match inputs_with_paths {
-        Some(inputs) => inputs,
-        _ => {
-            println!("zcash_create_transaction: failed to extract all input notes...");
-            return ptr::null_mut();
-        },
-    };
+    let mut notes = Vec::with_capacity(number_of_players() + 1);
+    let mut merkle_paths = merkle_paths.into_iter();
+    // Pair up Merkle paths with input bundles and find notes of interest
+    for (input, advice) in inputs.zip(advices) {
+        // Take as many paths as needed for this bundle
+        let actions = input.actions();
+        let paths = merkle_paths
+            .by_ref()
+            .take(actions.len());
+
+        // With paths attached to notes/outputs, find the actual note/output of interest, i.e., the one
+        // that credits the deposit address and thus corresponds to the advice
+        let (note, path) = match extract_unique_note(actions.into_iter(), paths, advice) {
+            Some((note, path)) => (note, path),
+            _ => return ptr::null_mut(),
+        };
+
+        notes.push((note, path, advice));
+        println!("zcash_create_transaction: successfully extracted {} input note(s)", notes.len());
+    }
 
     let mut builder = match Builder::new(
         BundleType::DEFAULT,
@@ -271,10 +271,9 @@ pub extern "C" fn zcash_create_transaction(
     };
     println!("zcash_create_transaction: adding spends...");
     // Add spends
-    let result: Result<Vec<_>, _> = inputs_with_paths
+    let result: Result<Vec<_>, _> = notes
         .into_iter()
-        .zip(advices)
-        .map(|((note, merkle_path), advice)| {
+        .map(|(note, merkle_path, advice)| {
             builder.add_spend_with_alpha(
                 advice.fvk.clone(),
                 note,
