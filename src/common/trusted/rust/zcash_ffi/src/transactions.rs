@@ -169,7 +169,7 @@ fn parse_merkle_paths(merkle_paths: *const u8, merkle_paths_length: usize) -> Op
     }
     let anchor = anchor.unwrap().into();
 
-    let mut paths = Vec::with_capacity(paths_length / RAW_ANCHOR_SIZE);
+    let mut paths = Vec::with_capacity(paths_length / RAW_PATH_SIZE);
     // Parse the Merkle paths (one for each spend)
     for chunk in paths_bytes.chunks_exact(RAW_PATH_SIZE) {
         let (position_bytes, path_bytes) = chunk.split_at(4);
